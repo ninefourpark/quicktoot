@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <title>QuickToot</title>
+  <link rel="stylesheet" href="styles.css">
+
+</head>
+<body>
+
+<div>
+  <div id="languageButtons">
+    <button data-lang="en-us" class="langBtn">English</button>
+    <button data-lang="jp" class="langBtn">日本語</button>
+    <button data-lang="zh-tw" class="langBtn">繁體中文</button>
+    <button data-lang="zh-cn" class="langBtn">简体中文</button>
+  </div>
+</div>
+
+<div class="habitDashboard">
+  <h2 id="titleHabits">习惯列表</h2>
+  <div id="habitList" aria-live="polite"></div>
+  <div class="new-habit-content">
+    <label for="newHabit"></label>
+    <input id="newHabit" placeholder="例如：学 5 个日语单词" aria-label="新增习惯">
+    <button id="addHabit">添加</button>
+  </div>
+</div>
+
+<!-- 设置界面-->
+<div>
+  <details id="settingsDetails">
+    <summary id="settingsHeading" tabIndex="0">
+        设置
+    </summary>
+  
+  <div class="form-content">
+   <!-- 串文功能 -->
+  <div class="checkDiv settingsSection">
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <input type="checkbox" id="enableThreadingInput" aria-label="启用串文功能">
+      <label id="labelEnableThreading" for="enableThreadingInput">启用串文</label>
+    </div>
+    <p class="hint" id="explainEnableThreading"></p>
+  </div>
+
+  <!-- Mastodon 实例 -->
+  <div class="settingsSection">
+    <label id="labelInstance" for="instanceInput">Mastodon 实例地址</label><br>
+    <input id="instanceInput" placeholder="例如：https://mastodon.social" aria-label="实例地址">
+    <div id="recheckThreadingNotice" style="display: none;">你修改了实例地址，如果仍然想使用串文功能，请重新勾选以更新授权。</div>
+  </div>
+
+  <!-- 嘟嘟的默认可见性 -->
+  <div class="settingsSection">
+    <label id="labelVisibility"></label>
+    <p class="hint" id="explainVisibility"></p>
+  <select id="visibilitySelect">
+  <option value="public">公开</option>
+  <option value="unlisted">悄悄公开</option>
+  <option value="private">仅关注者可见</option>
+  <option value="direct">仅自己可见</option>
+  </select>
+  </div>
+  
+  <!-- 嘟文模板 -->
+  <div  class="settingsSection">
+    <label id="labelTemplate" for="templateInput">
+    </label>
+    <p class="hint" id="explainTemplate"></p>
+    <textarea id="templateInput" rows="8" aria-label="嘟文模板"></textarea>
+  </div>
+
+  <!-- 热力图符号 -->
+  <div  class="settingsSection">
+    <div>
+      <label id="labelEmojiDone" for="emojiDoneInput">完成习惯后热力图上显示的符号</label><br>
+      <input id="emojiDoneInput" placeholder="🔥" aria-label="完成 emoji">
+    </div>
+    <div>
+      <label id="labelEmojiEmpty" for="emojiEmptyInput">未完成习惯时热力图上显示的符号</label><br>
+      <input id="emojiEmptyInput" placeholder="⬜" aria-label="未完成 emoji">
+    </div>
+  </div>
+
+  <!-- 快捷键 -->
+  <div class="settingsSection">
+    <label id="popupShortcutLegend"></label>
+    <p class="hint" id="popupShortcutInfo"></p>
+    <button id="popupShortcutOpenChromeLink" aria-label=""></button>
+  </div>
+
+  <!-- 数据导出与导入 -->
+  <div class="settingsSection">
+    <div class="dataBlock">
+      <button id="exportData" class="secondary"></button>
+    </div>
+    <hr>
+    <div class="dataBlock">
+      <label id="importTitle"></label>
+      <p class="hint" id="importDesc"></p>
+
+      <button id="importBtn" class="secondary"></button>
+      <input
+        type="file"
+        id="importFileInput"
+        accept="application/json"
+        style="display: none;"
+      />
+    </div>
+  </div>
+
+  <div class="githublinkSection">
+    <div class="footer-content">
+      <p  id="githublink"></p>
+    </div>
+  </div>
+
+  <!-- 保存设置 -->
+  <div class="sticky-save">
+      <div id="saveMessage" >設定已儲存</div>
+      <div id="saveWarning" >有未儲存的變更</div>
+    <button id="saveSettings">儲存</button>
+  </div>
+  </div>
+  </details>  
+</div>
+
+<!-- 链接 link modal -->
+<div id="linkModalOverlay" class="modal-overlay">
+  <div id="linkModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="linkModalTitle">
+    <div>
+      <h3 id="linkModalTitle">给这件事加一个链接</h3>
+      <p id="linkModalInfo"></p> 
+    </div>
+    <textarea id="linkModalInput" rows="2" placeholder="例如：https://www.youtube.com/..." aria-label="链接地址"></textarea>
+    <div class="error" id="linkModalError" style="display:none"></div>
+    <div class="actions">
+      <div class="noBtn">
+      <button id="linkModalCancelBtn">取消</button>
+      <button id="linkModalDeleteBtn">移除链接</button>
+      </div>
+      <div class="yesBtn">
+        <button id="linkModalSaveBtn">保存链接</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 单个习惯专用模板 custom template modal -->
+<div id="customTemplateModalOverlay" class="modal-overlay">
+  <div id="customTemplateModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="customTemplateModalTitle">
+    <div>
+      <h3 id="customTemplateModalTitle">撰写单独模板</h3>
+      <p id="customTemplateModalInfo"></p> 
+    </div>
+    <textarea id="customTemplateModalInput" rows="2" placeholder=""></textarea>
+    <div class="error" id="customTemplateModalError" style="display:none"></div>
+    <div class="actions">
+      <div class="noBtn">
+      <button id="customTemplateModalCancelBtn">取消</button>
+      <button id="customTemplateModalDeleteBtn">移除链接</button>
+      </div>
+      <div class="yesBtn">
+        <button id="customTemplateModalSaveBtn">保存链接</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 绑定快捷键 shortcut modal -->
+<div id="shortcutModalOverlay" class="modal-overlay">
+  <div id="shortcutModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="shortcutModalTitle">
+    <div>
+      <h3 id="shortcutModalTitle"></h3>
+      <p id="shortcutModalInfo" class="hint" ></p>
+    </div>
+    <div>
+      <p id="currentShortcut" class="hint" aria-live="polite"></p>
+      <button  id="shortcutOpenChromeLink"></button>
+    </div>
+    <div>
+      <label id="slotLabel" for="slotSelect"></label>
+      <select id="slotSelect" aria-label="快捷键编号">
+        <option id="unsetOption" value="">不使用</option>
+        <option value="1" id="slotOption1">1 （默认为 Ctrl + Shift + 1）</option>
+        <option value="2" id="slotOption2">2 （默认为 Ctrl + Shift + 2）</option>
+        <option value="3" id="slotOption3">3 （默认为 Ctrl + Shift + 3）</option>
+      </select>
+    </div>
+    <div>
+      <label id="actionLabel" for="actionSelect"></label>
+      <select id="actionSelect" aria-label="快捷键动作">
+        <option value="openLink"></option>
+        <option value="checkIn"></option>
+      </select>
+    </div>
+
+    <div class="error" id="shortcutModalError" style="display:none"></div>
+    <div class="actions">
+      <div class="noBtn">
+        <button id="shortcutModalCancelBtn">取消</button>
+        <button id="shortcutModalClearBtn">移除快捷键</button>
+      </div>
+      <div class="yesBtn">
+        <button id="shortcutModalSaveBtn">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 绑定串文  bind thread modal -->
+<div id="bindThreadModalOverlay" class="modal-overlay">
+  <div id="bindThreadModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="bindThreadModalTitle">
+    <div>
+      <h3 id="bindThreadModalTitle">绑定串文</h3>
+      <p id="bindThreadModalInfo">输入该习惯串文中任意一条嘟文的ID，用于后续打卡回复到此串文。</p>
+    </div>
+    <input id="bindThreadModalInput" placeholder="例如：123456789" aria-label="串文ID">
+    <div class="error" id="bindThreadModalError" style="display:none"></div>
+    <div class="actions">
+      <div class="noBtn">
+        <button id="bindThreadModalCancelBtn">取消</button>
+        <button id="bindThreadModalRemoveBtn">移除绑定</button>
+      </div>
+      <div class="yesBtn">
+        <button id="bindThreadModalSaveBtn">绑定</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- instance modal -->
+<div id="instanceModalOverlay" class="modal-overlay">
+  <div id="instanceModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="instanceModalTitle">
+
+  <div>
+    <div id="languageButtons">
+        <button data-lang="zh-tw" class="langBtn">繁體中文</button>
+        <button data-lang="zh-cn" class="langBtn">简体中文</button>
+        <button data-lang="en" class="langBtn">English</button>
+    </div>
+  </div>
+
+    <h3 id="instanceModalTitle">请填写你的实例地址</h3>
+    <p id="instanceModalMessage">我们需要知道你使用哪个 Mastodon 服务器来发送嘟文。实例通常是一个 URL，比如 https://mastodon.social。填写后我们会把嘟文发送到该服务器。</p>
+    <input id="instanceModalInput" aria-label="实例地址">
+    <div class="error" id="instanceModalError" style="display:none"></div>
+
+    <div class="actions">
+      <button id="instanceCancelBtn">稍后再说</button>
+      <button id="instanceSaveBtn">保存并继续</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="popup.js"></script>
+
+</body>
+</html>

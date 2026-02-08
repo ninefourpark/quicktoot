@@ -1,0 +1,216 @@
+body {
+  margin: 0;
+  padding: 12px 16px;
+  width: 420px;
+  min-height: 480px;
+  overflow-y: auto;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* ===== Modal ===== */
+
+.thread-modal {
+  color: var(--text-main);
+  background: var(--bg-main);
+  padding: 12px;
+  border-radius: 8px;
+  max-width: 100%;
+}
+
+.thread-modal h4 {
+  margin: 0 0 8px 0;
+  font-weight: 600;
+}
+
+/* ===== Sections ===== */
+
+.section {
+  margin-bottom: 14px;
+}
+
+.section-main {
+  margin-bottom: 18px;
+}
+
+.section-title {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+/* ===== Inputs ===== */
+
+.thread-modal textarea,
+.thread-modal input,
+.thread-modal select {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.thread-modal textarea {
+  min-height: 120px;
+  padding: 8px;
+  border-radius: 6px;
+}
+
+.field-label {
+  display: block;
+  font-size: 13px;
+}
+
+.alt-label {
+  margin-top: 6px;
+}
+
+/* ===== Subtle boxes ===== */
+
+.subtle-box {
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--btn-bg);
+  margin-bottom: 10px;
+}
+
+/* ===== Image toggle ===== */
+
+.image-toggle {
+  display: inline-block;
+  padding: 4px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 2px solid var(--border-btn);
+  background: var(--btn-bg);
+  box-shadow: 0 3px 0 var(--border-btn);
+  cursor: pointer;
+  margin: 0 0;
+}
+
+.image-toggle:hover {
+  background: var(--btn-hover-bg);
+}
+
+.image-toggle:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--border-btn);
+}
+
+/* ===== Image upload area ===== */
+
+.image-upload {
+  display: none;
+  margin-block: 10px;
+}
+
+/* 展开状态 */
+.image-upload.is-open {
+  display: block;
+}
+
+/* ===== Visibility ===== */
+
+.thread-visibility select {
+  cursor: pointer;
+}
+
+/* ===== Thread type ===== */
+
+.thread-type-group {
+  display: flex;
+  gap: 10px;
+  width: 85%;
+}
+
+.thread-type-option {
+  flex: 1;
+}
+
+.thread-type-option label {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 6px 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: 2px solid var(--border-btn);
+  border-radius: 6px;
+  background: var(--btn-bg);
+  box-shadow: 0 4px 0 var(--border-btn);
+  cursor: pointer;
+  user-select: none;
+}
+
+.thread-type-option input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+}
+
+.thread-type-option label:has(input:checked) {
+  background: var(--active-bg);
+  color: var(--active-text);
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 var(--border-btn);
+}
+
+.thread-type-option label:hover {
+  background: var(--btn-hover-bg);
+}
+
+/* ===== Thread ID ===== */
+
+.thread-id-box {
+  margin-top: 10px;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--btn-bg);
+  display: none;
+}
+
+.hint-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 4px 0 0;
+}
+
+.hint-text.italic {
+  font-style: italic;
+}
+
+/* ===== Footer ===== */
+
+.sticky-toot {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--bg-main);
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.actions button {
+  min-width: 80px;
+}
+
+#threadModalPublishBtn {
+  width: 50%;
+}
+
+.shortcut-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.error {
+  font-size: 12px;
+  color: var(--dangerous-bg);
+  display: none;
+}

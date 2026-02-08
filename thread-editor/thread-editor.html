@@ -1,0 +1,125 @@
+
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Threading | QuickToot</title>
+  <link rel="icon" href="../icons/quicktoot-icon-32.png" type="image/x-icon">
+  <link rel="stylesheet" href="../styles.css">
+  <link rel="stylesheet" href="thread-editor.css">
+</head>
+
+
+<body>
+  <div class="thread-modal" role="dialog" aria-modal="true" aria-labelledby="threadModalTitle">
+
+    <!-- 主内容 -->
+    <div class="section section-main">
+      <h4 id="threadModalTitle"></h4>
+      <textarea
+        id="threadModalText"
+        rows="10"
+      ></textarea>
+      <!-- 图片入口 -->
+      <button
+          type="button"
+          id="toggleImageUpload"
+          class="image-toggle"
+          aria-expanded="false"
+      >
+      </button>
+  
+      <!-- 图片上传区（默认收起） -->
+      <div id="imageUploadDiv" class="image-upload subtle-box">
+          <label for="threadImage" class="field-label" id="threadUploadImage"></label>
+          <input type="file" id="threadImage" accept="image/*">
+  
+          <label for="threadImageAlt" class="field-label alt-label" id="imageAltInputInfo">
+          </label>
+          <input
+          type="text"
+          id="threadImageAlt"
+          >
+      </div>
+    </div>
+
+    <!-- 可见性 -->
+    <div class="section">
+        <div class="thread-visibility">
+            <label id="threadVisibilityLabel" class="field-label" for="threadVisibility">
+            可见性
+            </label>
+            <select id="threadVisibility">
+            <option value="private">仅关注者可见</option>
+            <option value="direct">私信</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- 串文方式 -->
+    <div class="section">
+      <div class="section-title" id="threadTypeHeading"></div>
+
+      <div class="thread-type-group">
+        <div class="thread-type-option">
+          <div class="thread-tabs">
+          <label>
+            <input type="radio" id="threadReply" name="threadType" value="reply">
+            <span id="threadReplyLabel">回复旧串</span>
+          </label>
+          </div>    
+        </div>
+
+        <div class="thread-type-option">
+          <div class="thread-tabs">
+          <label>
+            <input type="radio" id="threadNew" name="threadType" value="new">
+            <span id="threadNewLabel">开启新串</span>
+          </label>
+          </div>
+        </div>
+      </div>
+
+      <div id="threadIdDiv" class="thread-id-box">
+        <label id="threadIdLabel" class="field-label" for="threadIdInput">
+          回复给
+        </label>
+        <input
+          id="threadIdInput"
+          placeholder="嘟文编号，如 123456"
+          aria-label="串文ID"
+        >
+
+        <p id="threadIdExplain" class="hint-text">
+          嘟文编号是链接末尾的数字，例如
+          https://example.com/@user/123456
+        </p>
+
+        <hr>
+
+        <p id="threadIdInfo" class="hint-text italic">
+          已绑定串文，即将回复给：115926767898929026
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 底部操作栏 -->
+  <div class="sticky-toot">
+    <div class="actions">
+      <button id="threadModalCancelBtn">取消</button>
+      <p class="shortcut-hint">Esc</p>
+    </div>
+
+    <div class="error" id="threadModalError"></div>
+
+    <div class="actions">
+      <button id="threadModalPublishBtn">发布</button>
+      <p class="shortcut-hint">Shift + Enter</p>
+    </div>
+  </div>
+
+  <script type="module" src="thread-editor.js"></script>
+</body>
+</html>
