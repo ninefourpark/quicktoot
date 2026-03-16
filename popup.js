@@ -759,6 +759,28 @@ function showShortcutModal(habit) {
   shortcutModalCancelBtn.onclick = () => hideModal(overlayId);
 }
 
+
+// 自定义单个习惯快捷键的按钮
+// popup 里的普通链接不允许直接跳转到内部页面，所以用 扩展 API 创建新标签页。
+document
+  .getElementById('shortcutOpenChromeLink')
+  .addEventListener('click', (e) => {
+    e.preventDefault();
+    chrome.tabs.create({
+      url: 'chrome://extensions/shortcuts'
+    });
+  });
+// 自定义插件面板快捷键的按钮
+document
+  .getElementById('popupShortcutOpenChromeLink')
+  .addEventListener('click', (e) => {
+    e.preventDefault();
+    chrome.tabs.create({
+      url: 'chrome://extensions/shortcuts'
+    });
+  });
+
+
 // ============== Thread Modal ==============
 function showThreadModal(habit, text, data) {
   const url = chrome.runtime.getURL(`thread-editor/thread-editor.html?habitId=${habit.id}&text=${encodeURIComponent(text)}`);
