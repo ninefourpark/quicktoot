@@ -11,25 +11,19 @@
 ├── background.js              # 后台脚本
 ├── utils.js                   # 工具函数
 ├── templates.js               # 模板生成函数
-├── locales.js                 # 多语言本地化
 ├── thread-editor/
 │   └── thread-editor.html     # 串文编辑器 HTML
 │   └── thread-editor.js       # 串文编辑器脚本
 │   └── thread-editor.css      # 串文编辑器样式
 ├── scripts/
-│   └── locale-manager.js      # 语言本地化管理
 │   └── habit-manager.js       # 习惯数据管理
 │   └── modal-manager.js       # Modal窗口管理
 │   └── data-import-export.js  # 数据导入导出
 │   └── keyboard-handler.js    # 键盘导航和事件处理
 │   └── ui-renderer.js         # UI渲染和列表管理
-├── icons/
-│   └── icons.js               # 图标数据
-└── locales/
-    ├── zh-cn.js               # 简体中文
-    ├── zh-tw.js               # 繁體中文
-    ├── en-us.js               # English
-    └── jp.js                  # 日本語
+└── icons/
+    └── icons.js               # 图标数据
+
 ```
 
 ## 模块说明
