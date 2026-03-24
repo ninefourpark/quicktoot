@@ -1,189 +1,107 @@
-// thread-editor.js - Standalone window for thread editor threadIdExplain
-import { LOCALES } from '../locales.js'
+// thread-editor.js
 import { stripMentions } from '../utils.js';
 
-// Get elements
 const textArea = document.getElementById('threadModalText');
 const newRadio = document.getElementById('threadNew');
 const replyRadio = document.getElementById('threadReply');
-const threadDiv = document.getElementById('threadIdDiv');
 const idDiv = document.getElementById('threadIdDiv');
 const idInput = document.getElementById('threadIdInput');
 const idExplain = document.getElementById('threadIdExplain');
-const idLabel = document.getElementById('threadIdLabel');
 const idInfo = document.getElementById('threadIdInfo');
 const visibilitySelect = document.getElementById('threadVisibility');
-const visibilityLabel = document.getElementById('threadVisibilityLabel');
 const errorEl = document.getElementById('threadModalError');
 const publishBtn = document.getElementById('threadModalPublishBtn');
 const cancelBtn = document.getElementById('threadModalCancelBtn');
-const modalTitle = document.getElementById('threadModalTitle');
-const threadReplyLabel = document.getElementById('threadReplyLabel');
-const threadNewLabel = document.getElementById('threadNewLabel');
-
-const imageInput = document.getElementById('threadImage');
-const imageAltInput = document.getElementById('threadImageAlt');
-const imageAltInputInfo = document.getElementById('imageAltInputInfo');
-
 const toggleBtn = document.getElementById('toggleImageUpload');
 const imageUploadDiv = document.getElementById('imageUploadDiv');
+const imageInput = document.getElementById('threadImage');
+const imageAltInput = document.getElementById('threadImageAlt');
 
-let currentHabit = null;
-let currentLang = 'zh-cn';
+let currentHabit = null;   // null 表示「写单条嘟嘟」模式
+let currentSite = null;
 let defaultVisibility = 'public';
 
-// 语言规范化函数
-function normalizeLang(lang) {
-  if (!lang) return 'zh-cn';
-
-  if (LOCALES[lang]) return lang;
-
-  // 处理 en-us / en-gb / zh-hk 等
-  const short = lang.split('-')[0];
-  if (LOCALES[short]) return short;
-
-  return 'zh-cn';
-}
-
+// ============== 图片上传开关 ==============
 toggleBtn.addEventListener('click', () => {
   const isOpen = imageUploadDiv.classList.toggle('is-open');
   toggleBtn.setAttribute('aria-expanded', isOpen);
-  const L = LOCALES[currentLang];
-  toggleBtn.textContent = isOpen ? L.imageRemove : L.imageAdd;
+  toggleBtn.textContent = isOpen ? '− 移除图片' : '＋ 添加图片';
 });
 
-function applyLocale(lang) {
-  const normalizedLang = normalizeLang(lang);
-  const L = LOCALES[normalizedLang] || LOCALES['zh-cn'];
-  currentLang = lang;
-  if (!L) {
-      console.error('无法加载语言包:', normalizedLang);
-      return;
-    }
+// ============== 可见性选项 ==============
+const VISIBILITY_OPTIONS = ['public', 'unlisted', 'private', 'direct'];
+const VISIBILITY_LABELS = { public: '公开', unlisted: '悄悄公开', private: '仅关注者可见', direct: '私信' };
 
-  currentLang = normalizedLang;
-
-  modalTitle.textContent = L.threadModalTitle;
-  visibilityLabel.textContent = L.threadVisibility;
-  threadReplyLabel.textContent = L.threadReply;
-  threadNewLabel.textContent = L.threadNew;
-  idLabel.textContent = L.threadInputId;
-  idExplain.textContent = L.threadIdExplain;
-  idInput.placeholder = L.threadInputIdPlaceholder;
-  publishBtn.textContent = L.threadPublish;
-  cancelBtn.textContent = L.threadCancel;
-
-  const isOpen = toggleBtn.getAttribute('aria-expanded') === 'true';
-  toggleBtn.textContent = isOpen ? L.imageRemove : L.imageAdd;
-  
-  imageAltInputInfo.textContent = L.imageAltInputInfo;
-  threadImageAlt.placeholder = L.threadImageAlt;
-
-  // Update visibility options
-  updateVisibilityOptions(visibilitySelect.value || 'public');
-}
-
-// 清除之前的限制，讓用戶在新建串文時可以自由選擇所有公開級別
-function setVisibilityIfNoContext(minVisibility) {
-  const options = ['public', 'unlisted', 'private', 'direct'];
+// 渲染全部可见性选项，仅设置默认选中值（用于「写单条嘟嘟」）
+function setVisibilityDefault(defaultValue) {
   visibilitySelect.innerHTML = '';
-  const L = LOCALES[currentLang] || LOCALES['zh-cn'];
-  const labels = {
-    public: L.threadPublic,
-    unlisted: L.threadUnlisted,
-    private: L.threadPrivate,
-    direct: L.threadDirect
-  };
-  options.forEach(v => {
+  VISIBILITY_OPTIONS.forEach(v => {
     const opt = document.createElement('option');
     opt.value = v;
-    opt.textContent = labels[v];
+    opt.textContent = VISIBILITY_LABELS[v];
     visibilitySelect.appendChild(opt);
   });
-  visibilitySelect.value = minVisibility;
+  visibilitySelect.value = defaultValue || 'public';
 }
 
-
-function updateVisibilityOptions(minVisibility) {
-  const options = ['public', 'unlisted', 'private', 'direct'];
-  const allowed = options.slice(options.indexOf(minVisibility));
+// 渲染从 minVisibility 起的选项并选中（用于串文回复，继承上一条可见性）
+function setVisibilityOptions(minVisibility) {
+  const allowed = VISIBILITY_OPTIONS.slice(VISIBILITY_OPTIONS.indexOf(minVisibility));
   visibilitySelect.innerHTML = '';
-  const L = LOCALES[currentLang] || LOCALES['zh-cn'];
-  const labels = {
-    public: L.threadPublic,
-    unlisted: L.threadUnlisted,
-    private: L.threadPrivate,
-    direct: L.threadDirect
-  };
   allowed.forEach(v => {
     const opt = document.createElement('option');
     opt.value = v;
-    opt.textContent = labels[v];
+    opt.textContent = VISIBILITY_LABELS[v];
     visibilitySelect.appendChild(opt);
   });
   visibilitySelect.value = minVisibility;
 }
 
-function getVisibility(statusId) {
-  chrome.storage.local.get({ instance: '' }, (data) => {
-    const instance = data.instance;
-    chrome.runtime.sendMessage({ action: 'getStatusVisibility', statusId: statusId, instance: instance }, (response) => {
+function getVisibilityFromServer(statusId) {
+  chrome.runtime.sendMessage(
+    { action: 'getStatusVisibility', statusId, siteId: currentSite.id },
+    (response) => {
       if (response && response.success) {
-        const vis = response.visibility;
-        const L = LOCALES[currentLang] || LOCALES['zh-cn'];
-        const visLabels = {
-          public: L.threadPublic,
-          unlisted: L.threadUnlisted,
-          private: L.threadPrivate,
-          direct: L.threadDirect
-        };
-        updateVisibilityOptions(vis);
+        setVisibilityOptions(response.visibility);
         errorEl.style.display = 'none';
       } else {
-        updateVisibilityOptions('public');
-        const L = LOCALES[currentLang] || LOCALES['zh-cn'];
-        errorEl.textContent = L.errorGetVisibility;
+        setVisibilityOptions('public');
+        errorEl.textContent = '未能找到您要回复的嘟文。请确认实例地址、嘟文编号正确，以及嘟文尚未被删除。';
         errorEl.style.display = 'block';
       }
-    });
-  });
+    }
+  );
 }
 
-
-
-// Event listeners
-cancelBtn.onclick = () => window.close();
-
+// ============== 串文方式切换 ==============
 newRadio.onchange = () => {
   if (newRadio.checked) {
     idDiv.style.display = 'none';
-    setVisibilityIfNoContext(defaultVisibility);
+    if (currentHabit === null) {
+      // 写单条嘟嘟：全部选项可选，默认为实例设置值
+      setVisibilityDefault(defaultVisibility);
+    } else {
+      // 话题模式：新开串文，同样无继承限制
+      setVisibilityDefault(defaultVisibility);
+    }
   }
 };
 
 replyRadio.onchange = () => {
-  if (replyRadio.checked) {
-    const L = LOCALES[currentLang] || LOCALES['zh-tw'];
-    idDiv.style.display = 'block';
-    idExplain.style.display = 'block';
-    idExplain.textContent = L.threadIdExplain;
-
-    if (currentHabit && currentHabit.root_status_id) {
-      idInput.value = currentHabit.last_status_id || currentHabit.root_status_id;
-      idInput.readOnly = false;
-
-      idInfo.textContent = 
-        L.threadIdInfoBound + ' ' + 
-        (currentHabit.last_status_id || currentHabit.root_status_id);
-
-      idInfo.style.display = 'block';
-      getVisibility(currentHabit.last_status_id || currentHabit.root_status_id);
-    } else {
-      idInput.value = '';
-      idInput.readOnly = false;
-      idInfo.style.display = 'none';
-      updateVisibilityOptions('public');
-    }
+  if (!replyRadio.checked) return;
+  idDiv.style.display = 'block';
+  idExplain.style.display = 'block';
+  if (currentHabit && currentHabit.root_status_id) {
+    idInput.value = currentHabit.last_status_id || currentHabit.root_status_id;
+    idInput.readOnly = false;
+    idInfo.textContent = '已绑定串文，即将回复给：' + (currentHabit.last_status_id || currentHabit.root_status_id);
+    idInfo.style.display = 'block';
+    getVisibilityFromServer(currentHabit.last_status_id || currentHabit.root_status_id);
+  } else {
+    idInput.value = '';
+    idInput.readOnly = false;
+    idInfo.style.display = 'none';
+    setVisibilityOptions('public');
   }
 };
 
@@ -191,215 +109,179 @@ idInput.oninput = () => {
   const id = idInput.value.trim();
   if (id && replyRadio.checked) {
     idInfo.style.display = 'none';
-    getVisibility(id);
+    getVisibilityFromServer(id);
   } else if (!id && replyRadio.checked) {
-    updateVisibilityOptions('public');
+    setVisibilityOptions('public');
   }
 };
+
+// ============== 键盘快捷键 ==============
+document.addEventListener('keydown', (e) => {
+  if (e.shiftKey && e.key === 'Enter') { e.preventDefault(); publishBtn.click(); }
+  else if (e.key === 'Escape') { e.preventDefault(); cancelBtn.click(); }
+});
+
+cancelBtn.onclick = () => window.close();
 
 window.onload = () => {
-  const contentHeight = document.body.scrollHeight;
-  chrome.runtime.sendMessage({ action: 'resizeWindow', height: contentHeight });
+  chrome.runtime.sendMessage({ action: 'resizeWindow', height: document.body.scrollHeight });
 };
 
-let isKeyboardUser = false; document.addEventListener('keydown', () => { isKeyboardUser = true; }); document.addEventListener('mousedown', () => { isKeyboardUser = false; });
-
-const selectors = ['.image-upload', '.thread-visibility', '.thread-tabs', '.thread-id-box'];
-
-selectors.forEach(selector => { const container = document.querySelector(selector); container?.addEventListener('focusin', () => { if (isKeyboardUser) { container.scrollIntoView({ block: 'center', behavior: 'smooth' }); } }); });
-
-
-document.addEventListener('keydown', (event) => { if (event.shiftKey && event.key === 'Enter') { event.preventDefault(); publishBtn.click(); } else if (event.key === 'Escape') { event.preventDefault(); cancelBtn.click(); } });
-
-// publish toot 
+// ============== 发布 ==============
 publishBtn.onclick = () => {
   const text = textArea.value.trim();
-  const L = LOCALES[currentLang] || LOCALES['zh-cn'];
-  const safeText = stripMentions(text); // 在发送前，阻止嘟文里出现对他人的定向提及。只要文本中匹配 @ 后面紧跟英文字母、数字或下划线，就视为提及，禁止发送。
-
   const file = imageInput.files[0];
-  const altText = imageAltInput.value.trim();
-  // 如果没写文字也没图片，显示错误并停止执行
-  if (!text && !file) { 
-    const L = LOCALES[currentLang] || LOCALES['zh-cn'];
-    errorEl.textContent = L.errorEmptyText;
+  const safeText = stripMentions(text);
+
+  if (!text && !file) {
+    errorEl.textContent = '请输入内容';
     errorEl.style.display = 'block';
     return;
   }
 
-  // 获取用户选择的可见性（公开、私密等）
   const visibility = visibilitySelect.value;
-  // 获取用户是否勾选了“回复已有串文”
   const isReply = replyRadio.checked;
-  // 如果是回复模式，就拿输入框里的 ID，否则为 null（空）
   const inReplyToId = isReply ? idInput.value.trim() : null;
 
-  // 如果选择了回复模式，但没输入ID，显示错误并停止执行
   if (isReply && !inReplyToId) {
-    errorEl.textContent = L.errorEmptyId;
+    errorEl.textContent = '请输入嘟文编号';
     errorEl.style.display = 'block';
     return;
   }
 
-  if (!currentHabit) {
-    console.error('currentHabit is null, cannot publish');
-    errorEl.textContent = '无法获取当前习惯，请稍后重试';
-    errorEl.style.display = 'block';
-    return;
-  }
-
-  // 发送到后台
   const message = {
     action: 'publishFromContent',
     text: safeText,
     visibility,
     inReplyToId,
-    habitId: currentHabit.id,
+    siteId: currentSite.id,
+    habitId: currentHabit ? currentHabit.id : null,
     isNewThread: !isReply,
   };
 
-  // 判断是否存在需要上传的文件
+  function sendPublish() {
+    chrome.runtime.sendMessage(message, handleResponse);
+  }
+
   if (file) {
     const reader = new FileReader();
-    reader.onload = function(e) {
-      const arrayBuffer = e.target.result;
-      // 将 ArrayBuffer 转换为普通的数字数组以确保安全传输
-      message.imageBuffer = Array.from(new Uint8Array(arrayBuffer));
+    reader.onload = (e) => {
+      message.imageBuffer = Array.from(new Uint8Array(e.target.result));
       message.imageName = file.name;
       message.imageType = file.type;
-      message.imageAlt = altText;
-      chrome.runtime.sendMessage(message, handleResponse);
+      message.imageAlt = imageAltInput.value.trim();
+      sendPublish();
     };
     reader.readAsArrayBuffer(file);
   } else {
-    // 如果用户没有选择图片则会直接发送不含图像信息的消息
-    chrome.runtime.sendMessage(message, handleResponse);
+    sendPublish();
   }
+
   function handleResponse(response) {
-    // response 是后台返回的结果。如果 success 为真，代表发布成功
-    // 如果发布成功，更新习惯数据
     if (response && response.success) {
-      // 更新习惯数据，把新嘟文的 ID 保存起来。
-      // 如果用户选择了“新串”，则把新嘟文的 ID 保存到 root_status_id 和 last_status_id 里
-      // 如果用户选择了“回复已有串文”，则只把新嘟文的 ID 保存到 last_status_id 里
-      // 如果这是第一次绑定，则把输入的 ID 保存到 root_status_id 里
-      chrome.storage.local.get({ habits: [] }, data => {
-        const hlist = data.habits || [];
-        // 在习惯列表里找到当前正在打卡的这一个习惯
-        const idx = hlist.findIndex(h => h.id === currentHabit.id);
-        if (idx !== -1) {
-          if (!isReply) {
-            // 如果是“新串”，那么这一条既是根 ID，也是最后一条 ID
-            hlist[idx].root_status_id = response.statusId;
-            hlist[idx].last_status_id = response.statusId;
-          } else {
-            // 如果是“回复”，根 ID 保持不变，只把最后一条 ID 更新为刚刚发布的 ID
-            hlist[idx].last_status_id = response.statusId;
-            // 万一之前根 ID 丢了，这里做一个补偿补录
-            if (!hlist[idx].root_status_id) {
-              hlist[idx].root_status_id = inReplyToId;
+      // 只有在话题模式下才需要更新 habit 的串文 ID
+      if (currentHabit) {
+        chrome.storage.local.get({ sites: [] }, data => {
+          const sites = data.sites || [];
+          const si = sites.findIndex(s => s.id === currentSite.id);
+          if (si !== -1) {
+            const hi = sites[si].habits.findIndex(h => h.id === currentHabit.id);
+            if (hi !== -1) {
+              if (!isReply) {
+                sites[si].habits[hi].root_status_id = response.statusId;
+                sites[si].habits[hi].last_status_id = response.statusId;
+              } else {
+                sites[si].habits[hi].last_status_id = response.statusId;
+                if (!sites[si].habits[hi].root_status_id) sites[si].habits[hi].root_status_id = inReplyToId;
+              }
+              chrome.storage.local.set({ sites }, () => window.close());
             }
           }
-          // 将修改后的整张表重新存入浏览器本地存储
-          chrome.storage.local.set({ habits: hlist }, () => {
-            // 存好后，关闭这个编辑小窗口
-            window.close();
-          });
-        }
-      });
+        });
+      } else {
+        window.close();
+      }
     } else {
-      // 如果失败了，在界面上显示后台传回来的错误信息
-      errorEl.textContent = response ? response.error : L.errorPublish;
+      errorEl.textContent = (response && response.error) || '发布失败';
       errorEl.style.display = 'block';
     }
   }
 };
 
-// Initialize from URL parameters or storage
+// ============== 初始化 ==============
 function initialize() {
   const urlParams = new URLSearchParams(window.location.search);
-  const habitIdParam = urlParams.get('habitId');
-  const textParam = urlParams.get('text');
+  const siteIdRaw = urlParams.get('siteId');
+  const habitIdRaw = urlParams.get('habitId');
+  const isQuickToot = urlParams.get('quickToot') === '1';
+  const textParam = urlParams.get('text') ? decodeURIComponent(urlParams.get('text')) : '';
 
-  chrome.storage.local.get(
-    { habits: [], language: 'zh-cn', defaultVisibility: 'public', pendingThreadEditor: null }, (data) => {
-    defaultVisibility = data.defaultVisibility || 'public';
-    const lang = data.language || 'zh-cn';
-    applyLocale(lang);
+  // siteId 必须存在且是有效数字
+  const siteIdParam = siteIdRaw ? Number(siteIdRaw) : null;
+  // habitId 为 'null' 字符串或不存在时，均视为「写单条嘟嘟」模式
+  const habitIdParam = (habitIdRaw && habitIdRaw !== 'null') ? Number(habitIdRaw) : null;
 
-    let habitId = habitIdParam ? Number(habitIdParam) : null;
-    let text = textParam ? decodeURIComponent(textParam) : '';
+  chrome.storage.local.get({ sites: [], activeSiteId: null }, (data) => {
+    const sites = data.sites || [];
+    // 严格用 === 比较数字类型
+    const site = sites.find(s => s.id === siteIdParam)
+      || sites.find(s => s.id === data.activeSiteId)
+      || sites[0];
+    if (!site) { errorEl.textContent = '找不到站点信息'; errorEl.style.display = 'block'; return; }
 
-    if (!habitId && data.pendingThreadEditor) {
-      habitId = data.pendingThreadEditor.habitId;
-      text = data.pendingThreadEditor.text;
-      chrome.storage.local.remove('pendingThreadEditor');
-    }
+    currentSite = site;
+    const siteInfoEl = document.getElementById('threadSiteInfo');
+    if (siteInfoEl) siteInfoEl.textContent = site.instance ? ' ' + site.instance.replace(/^https?:\/\//, '') : '';
+    defaultVisibility = site.defaultVisibility || 'public';
 
-    if (habitId !== null) {
-      const habit = data.habits.find(h => h.id === habitId);
-      if (habit) {
-        currentHabit = habit;
-        textArea.value = text;
-        errorEl.style.display = 'none';
+    // 「写单条嘟嘟」模式：habitId 为 null
+    if (habitIdParam === null) {
+      currentHabit = null;
+      textArea.value = textParam;
+      newRadio.checked = true;
+      idDiv.style.display = 'none';
+      idInfo.style.display = 'none';
+      setVisibilityDefault(defaultVisibility);
 
-        if (habit.root_status_id) {
-          replyRadio.checked = true;
-          idDiv.style.display = 'block';
-          idInput.value = habit.last_status_id || habit.root_status_id;
-          idInput.readOnly = false;
-          const L = LOCALES[currentLang] || LOCALES['zh-cn'];
-          idExplain.textContent = L.threadIdExplain;
-          idExplain.style.display = 'block';
-          idInfo.textContent = L.threadIdInfoBound + ' ' + (habit.last_status_id || habit.root_status_id);
-          idInfo.style.display = 'block';
-          getVisibility(habit.last_status_id || habit.root_status_id);
-        } else {
-          newRadio.checked = true;
-          idDiv.style.display = 'none';
-          idInfo.style.display = 'none';
-          setVisibilityIfNoContext(defaultVisibility);
+      // 单条模式下隐藏「接续串文」选项，可见性与前一条嘟无关
+      if (isQuickToot) {
+        const threadTypeHeading = document.getElementById('threadTypeHeading');
+        if (threadTypeHeading) {
+          const section = threadTypeHeading.closest('.section');
+          if (section) section.style.display = 'none';
         }
-        textArea.focus();
+        replyRadio.disabled = true;
       }
+
+      textArea.focus();
+      return;
     }
+
+    // 话题打卡模式
+    const habit = (site.habits || []).find(h => h.id === habitIdParam);
+    if (!habit) { errorEl.textContent = '找不到话题'; errorEl.style.display = 'block'; return; }
+
+    currentHabit = habit;
+    textArea.value = textParam;
+    errorEl.style.display = 'none';
+
+    if (habit.root_status_id) {
+      replyRadio.checked = true;
+      idDiv.style.display = 'block';
+      idInput.value = habit.last_status_id || habit.root_status_id;
+      idInput.readOnly = false;
+      idExplain.style.display = 'block';
+      idInfo.textContent = '已绑定串文，即将回复给：' + (habit.last_status_id || habit.root_status_id);
+      idInfo.style.display = 'block';
+      getVisibilityFromServer(habit.last_status_id || habit.root_status_id);
+    } else {
+      newRadio.checked = true;
+      idDiv.style.display = 'none';
+      idInfo.style.display = 'none';
+      setVisibilityOptions(defaultVisibility);
+    }
+    textArea.focus();
   });
 }
-// Listen for messages from background
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'initThreadEditor') {
-    chrome.storage.local.get({ habits: [], language: 'zh-cn' }, (data) => {
-      const habit = data.habits.find(h => h.id === request.habitId);
-      if (habit) {
-        applyLocale(data.language || 'zh-cn');
-        currentHabit = habit;
-        textArea.value = request.text;
-        errorEl.style.display = 'none';
-        
-        if (habit.root_status_id) {
-          replyRadio.checked = true;
-          idDiv.style.display = 'block';
-          idInput.value = habit.last_status_id || habit.root_status_id;
-          idInput.readOnly = false;
-          const L = LOCALES[currentLang] || LOCALES['zh-cn'];
-          idInfo.textContent = L.threadIdInfoBound + ' ' + (habit.last_status_id || habit.root_status_id);
-          idInfo.style.display = 'block';
-          getVisibility(habit.last_status_id || habit.root_status_id);
-        } else {
-          newRadio.checked = true;
-          idDiv.style.display = 'none';
-          idInfo.style.display = 'none';
-          updateVisibilityOptions('public');
-        }
-        textArea.focus();
-        sendResponse({ success: true });
-      } else {
-        sendResponse({ success: false });
-      }
-    });
-    return true;
-  }
-});
 
-// Initialize on load
 initialize();

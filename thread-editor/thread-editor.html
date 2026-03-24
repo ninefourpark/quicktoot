@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -16,7 +15,10 @@
 
     <!-- 主内容 -->
     <div class="section section-main">
-      <h4 id="threadModalTitle"></h4>
+      <h4 id="threadModalTitle">
+        发布嘟文
+        <span id="threadSiteInfo" class="hint-text"></span>
+      </h4>
       <textarea
         id="threadModalText"
         rows="10"
@@ -27,20 +29,15 @@
           id="toggleImageUpload"
           class="image-toggle"
           aria-expanded="false"
-      >
-      </button>
+      >＋ 添加图片</button>
   
       <!-- 图片上传区（默认收起） -->
       <div id="imageUploadDiv" class="image-upload subtle-box">
-          <label for="threadImage" class="field-label" id="threadUploadImage"></label>
+          <label for="threadImage" class="field-label" id="threadUploadImage">选择图片</label>
           <input type="file" id="threadImage" accept="image/*">
   
-          <label for="threadImageAlt" class="field-label alt-label" id="imageAltInputInfo">
-          </label>
-          <input
-          type="text"
-          id="threadImageAlt"
-          >
+          <label for="threadImageAlt" class="field-label alt-label" id="imageAltInputInfo">图片描述（给读屏用）</label>
+          <input type="text" id="threadImageAlt" placeholder="简单地说明">
       </div>
     </div>
 
@@ -51,15 +48,14 @@
             可见性
             </label>
             <select id="threadVisibility">
-            <option value="private">仅关注者可见</option>
-            <option value="direct">私信</option>
+            <!-- 由 JS 动态填充 -->
             </select>
         </div>
     </div>
 
     <!-- 串文方式 -->
     <div class="section">
-      <div class="section-title" id="threadTypeHeading"></div>
+      <div class="section-title" id="threadTypeHeading">串文方式</div>
 
       <div class="thread-type-group">
         <div class="thread-type-option">
@@ -98,9 +94,7 @@
 
         <hr>
 
-        <p id="threadIdInfo" class="hint-text italic">
-          已绑定串文，即将回复给：115926767898929026
-        </p>
+        <p id="threadIdInfo" class="hint-text italic" style="display:none;"></p>
       </div>
     </div>
   </div>
