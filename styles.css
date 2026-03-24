@@ -25,7 +25,6 @@
   --mono-font: "SF Mono", "Roboto Mono", "Source Code Pro", Menlo, Consolas, "Hiragino Sans GB", "Microsoft YaHei", "Hiragino Kaku Gothic ProN", "Meiryo", "Noto Sans Mono CJK SC", monospace;
 }
 
-
 body { 
   font-family: var(--main-font);
   min-width: 400px;
@@ -68,10 +67,23 @@ input[type='checkbox']:checked:hover {
   box-shadow: 0 0 0 var(--focus-outline) !important;
 }
 
-h2  { 
+#titleHabits { 
   margin: 4px 0; 
-  font-size: 1.3rem;
-}
+  font-size: 1.1rem;
+  display: flex;       /* 开启弹性布局 */
+    align-items: center; /* 垂直居中 */
+    text-align: center;  /* 文字居中 */
+    color: var(--text-main);         /* 文字颜色 */
+  }
+/* 在文字前后添加线条 */
+  #titleHabits::before,
+  #titleHabits::after {
+    content: "";         /* 必须写，否则伪元素不显示 */
+    flex: 1;             /* 自动拉伸，填满两侧剩余空间 */
+    height: 1px;         /* 线条高度 */
+    background: var(--border-btn);    /* 线条颜色 */
+    margin: 0 10px;
+  }
 
 .habitDashboard {
   border-block: 1px solid var(--border-btn);
@@ -180,7 +192,9 @@ h2  {
 details summary {
   cursor: pointer; 
   font-weight: 600; 
-  margin: 8px;
+  padding: 4px;
+  margin: 4px;
+  border-radius: 5px;
 }
 
 .settingsSection { 
@@ -259,7 +273,7 @@ details summary {
   background: var(--bg-main);
 }
 
-input, select, textarea, button { font-size: 1rem; padding: 8px; border-radius: 6px; margin: 6px 0;}
+input, select, textarea, button { font-size: 1rem; padding: 8px; border-radius: 6px; }
 input, select, textarea {
   font-family: var(--mono-font);
   background-color: var(--bg-textarea); 
@@ -285,7 +299,11 @@ button:active {
   box-shadow: 0 2px 0 var(--border-btn); /* 阴影变短，模拟触底 */
   transition: none; /* 点击瞬间取消过渡，让反馈更即时，防止跳动 */
 }
-button.active { background-color: var(--active-bg); color: var(--active-text); border-color: var(--active-bg); }
+button.active { 
+  background-color: var(--active-bg); 
+  color: var(--active-text); 
+  border-color: var(--active-bg); 
+}
 
 /* 设置界面语言的按钮 */
 #languageButtons { display:flex; gap:var(--gap-standard);  align-items:center; margin-bottom:8px; }
@@ -293,6 +311,7 @@ button.active { background-color: var(--active-bg); color: var(--active-text); b
 .langBtn.active { background:var(--active-bg); color:var(--active-text); }
 
 /* 关于“删除”的按钮 */
+#deleteSiteBtn,
 #habitDeleteBtn, 
 #shortcutModalClearBtn, 
 #linkModalDeleteBtn, 
@@ -411,3 +430,52 @@ input[type="checkbox"]:checked::after {
 #bindThreadModalInput {  width: 94%; }
 
 @media (max-width: 420px) { .habitMenu .menu-item { min-width: 120px; } }
+
+/* ===== 站点 Tab 栏 ===== */
+.site-tab-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 8px 0;
+  background: var(--bg-main);
+}
+
+.site-tab {
+  padding: 4px 12px;
+  font-size: 0.88rem;
+  border-radius: 6px 6px 0 0;
+  border: 2px solid var(--border-btn);
+  border-bottom: none;
+  background: var(--btn-bg);
+  box-shadow: none;
+  transform: none;
+  transition: background 0.1s;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.site-tab:hover { background: var(--btn-hover-bg); transform: none; box-shadow: none; }
+.site-tab:active { transform: none; box-shadow: none; }
+.site-tab.active { 
+  color: var(--active-bg); 
+  background: var(--active-text); 
+  border-color: var(--active-bg); 
+  border-bottom: 1pxx solid var(--bg-main);
+  z-index: 1;
+  margin-bottom: -1px;
+}
+.site-tab-add { color: var(--text-muted); font-weight: 400; }
+
+/* ===== 写单条嘟嘟行 ===== */
+.habit .quick-toot-btn {
+  font-size: 0.95rem;
+  flex-shrink: 0;
+}
+
+#quickTootSiteName {
+  flex: 1;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}

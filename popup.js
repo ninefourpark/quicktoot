@@ -1,950 +1,853 @@
-// Debug logging
-console.log('popup.js loading...');
-
-// Global error handlers
-window.addEventListener('error', (event) => {
-  console.error('Global error:', event.error);
-  alert('Error: ' + event.error.message);
-});
-
-window.addEventListener('unhandledrejection', (event) => {
-  console.error('Unhandled rejection:', event.reason);
-  alert('Unhandled rejection: ' + event.reason);
-});
-
-// Import modules
-import { getTemplate, buildHabitPostText } from './templates.js';
-import { LOCALES } from './locales.js';
+// popup.js
+import { buildHabitPostText, defaultTemplate } from './templates.js';
 import { ICONS } from './icons/icons.js';
 import {
-  getCurrentLang,
-  setActiveLangButton,
-  normalizeLang,
-  applyLocale
-} from './scripts/locale-manager.js';
-import {
-  normalizeInstance,
-  validateAndNormalizeInstance,
-  calcStreak,
-  buildHeatmap,
-  deleteHabitById,
-  moveHabitById,
-  isHabitDoneToday
+  normalizeInstance, validateAndNormalizeInstance,
+  calcStreak, buildHeatmap, deleteHabitById, moveHabitById,
+  isHabitDoneToday, migrateToMultiSite, getSiteDisplayName, getUsedSlots
 } from './scripts/habit-manager.js';
+import { trapFocus, showModal, hideModal, focusModalInput } from './scripts/modal-manager.js';
+import { exportBackup, exportMigration, importBackup, importMigration } from './scripts/data-import-export.js';
 import {
-  trapFocus,
-  showModal,
-  hideModal,
-  focusModalInput
-} from './scripts/modal-manager.js';
-import {
-  exportData,
-  importData
-} from './scripts/data-import-export.js';
-import {
-  initKeyboardNavigation,
-  initFocusScroll,
-  initNewHabitFocusScroll,
-  setupEnterKeySubmit
+  initKeyboardNavigation, initFocusScroll,
+  initNewHabitFocusScroll, setupEnterKeySubmit
 } from './scripts/keyboard-handler.js';
-import {
-  renderHabitList,
-  hideAllHabitMenus,
-  manageFocus,
-  updateWindowHeight,
-  initResizeObserver,
-  updateSettingsDisplay
-} from './scripts/ui-renderer.js';
+import { renderHabitList, hideAllHabitMenus, manageFocus, initResizeObserver } from './scripts/ui-renderer.js';
 
-console.log('All modules imported successfully');
-
-// Global state
+// ===== 全局状态 =====
 let currentEditingHabitId = null;
+let shortcutModalMode = 'habit'; // 'habit' | 'quickToot'
 
-// Initialize when DOM is ready
+// ===== 初始化 =====
 document.addEventListener('DOMContentLoaded', () => {
-  console.log('DOMContentLoaded triggered, initializing...');
-  try {
-    initializeUI();
-    loadData();
-    console.log('Initialization completed successfully');
-  } catch (error) {
-    console.error('Initialization failed:', error);
-    alert('Initialization failed: ' + error.message);
-  }
+  initKeyboardNavigation();
+  initFocusScroll();
+  initNewHabitFocusScroll();
+  setupEnterKeySubmit('#newHabit', '#addHabit');
+  setupEnterKeySubmit('#instanceModalInput', '#instanceSaveBtn');
+  setupEnterKeySubmit('#linkModalInput', '#linkModalSaveBtn');
+  setupEnterKeySubmit('#bindThreadModalInput', '#bindThreadModalSaveBtn');
+  initResizeObserver();
+  document.body.addEventListener('click', hideAllHabitMenus);
+
+  setupAddHabitButton();
+  setupEnableThreading();
+  setupSiteSettings();
+  setupGlobalSettings();
+  setupDataButtons();
+  setupQuickTootOptions();
+
+  loadData();
 });
 
-function initializeUI() {
-  console.log('initializeUI started');
-  
-  try {
-    // Keyboard navigation
-    initKeyboardNavigation();
-    console.log('- initKeyboardNavigation done');
-    
-    initFocusScroll();
-    console.log('- initFocusScroll done');
-    
-    initNewHabitFocusScroll();
-    console.log('- initNewHabitFocusScroll done');
-
-    // Enter key submit
-    setupEnterKeySubmit('#newHabit', '#addHabit');
-    setupEnterKeySubmit('#instanceModalInput', '#instanceSaveBtn');
-    setupEnterKeySubmit('#linkModalInput', '#linkModalSaveBtn');
-    setupEnterKeySubmit('#bindThreadModalInput', '#bindThreadModalSaveBtn');
-    console.log('- setupEnterKeySubmit done');
-
-    // Window height
-    initResizeObserver();
-    console.log('- initResizeObserver done');
-
-    // Menu close
-    document.body.addEventListener('click', hideAllHabitMenus);
-    console.log('- menu close listener added');
-
-    // Language buttons
-    setupLanguageButtons();
-    console.log('- setupLanguageButtons done');
-
-    // Add habit
-    setupAddHabitButton();
-    console.log('- setupAddHabitButton done');
-
-    // Enable threading
-    setupEnableThreading();
-    console.log('- setupEnableThreading done');
-
-    // Settings input
-    setupSettingsInputs();
-    console.log('- setupSettingsInputs done');
-
-    // Data import export
-    setupDataExportImport();
-    console.log('- setupDataExportImport done');
-    
-    console.log('initializeUI finished successfully');
-  } catch (error) {
-    console.error('Error in initializeUI:', error);
-    throw error;
-  }
-}
-
-// ============== Language Management ==============
-function setupLanguageButtons() {
-  const langButtons = document.querySelectorAll('.langBtn');
-  if (!langButtons || !langButtons.length) return;
-
-  langButtons.forEach(btn => {
-    btn.addEventListener('click', () => {
-      const lang = btn.dataset.lang;
-      chrome.storage.local.get({ templates: {} }, data => {
-        const templates = data.templates || {};
-        chrome.storage.local.set({ language: lang }, () => {
-          applyLocale(lang, templates);
-          loadData();
-        });
+// ===== 数据加载 =====
+function loadData(isFromSubmit = false, lastFocusedId = null, lastFocusedClass = null) {
+  chrome.storage.local.get(null, (raw) => {
+    // 一次性迁移旧数据结构
+    const migration = migrateToMultiSite(raw);
+    if (migration) {
+      chrome.storage.local.set(migration, () => {
+        chrome.storage.local.get(null, (data) => render(data, isFromSubmit, lastFocusedId, lastFocusedClass));
       });
-    });
+      return;
+    }
+    render(raw, isFromSubmit, lastFocusedId, lastFocusedClass);
   });
 }
 
-// ============== Data Loading ==============
-function loadData(isFromSubmit = false, lastFocusedId = null, lastFocusedClass = null) {
-  chrome.storage.local.get(
-    {
-      habits: [],
-      emojiDone: '🔥',
-      emojiEmpty: '⬜',
-      instance: '',
-      language: 'zh-cn',
-      templates: {},
-      enableThreading: false,
-      defaultVisibility: 'public'
-    },
-    (data) => {
-      data.language = normalizeLang(data.language);
-      render(data, isFromSubmit, lastFocusedId, lastFocusedClass);
-    }
-  );
+function getActiveSite(data) {
+  const sites = data.sites || [];
+  return sites.find(s => s.id === data.activeSiteId) || sites[0] || null;
 }
 
 function render(data, isFromSubmit = false, lastFocusedId = null, lastFocusedClass = null) {
-  // Update settings display
-  updateSettingsDisplay(data);
+  const sites = data.sites || [];
+  const site = getActiveSite(data);
 
-  // Render habit list
-  renderHabitList(
-    data.habits,
-    data,
-    onHabitDone,
-    onHabitUnDone,
-    onMoveHabit,
-    onDeleteHabit,
-    startEditTitle,
-    showBindThreadModal,
-    showShortcutModal,
-    showLinkModal,
-    showCustomTemplateModal
-  );
+  renderSiteTabs(sites, data.activeSiteId);
+  renderQuickTootBadge(site);
 
-  // Apply localization
-  applyLocale(data.language, data.templates);
+  if (site) {
+    renderHabitList(
+      site.habits || [], site, data,
+      onHabitDone, onHabitUnDone, onMoveHabit, onDeleteHabit,
+      startEditTitle, showBindThreadModal, showShortcutModal,
+      showLinkModal, showCustomTemplateModal
+    );
+    updateSiteSettingsDisplay(site);
+  } else {
+    document.getElementById('habitList').innerHTML = '';
+  }
 
-  // Check pending thread habit
-  chrome.storage.local.get({ pendingThreadHabit: null, pendingText: null }, pendingData => {
-    if (pendingData.pendingThreadHabit) {
-      const habit = data.habits.find(h => h.id === pendingData.pendingThreadHabit);
-      if (habit && pendingData.pendingText) {
-        chrome.storage.local.remove(['pendingThreadHabit', 'pendingText'], () => {
-          showThreadModal(habit, pendingData.pendingText, data);
-        });
-      } else {
-        chrome.storage.local.remove(['pendingThreadHabit', 'pendingText']);
-      }
-    }
-  });
-
-  // Check if instance is valid
+  // 首次引导：无实例地址
   chrome.storage.local.get({ instancePromptDismissed: false }, s => {
-    if (!s.instancePromptDismissed && !validateAndNormalizeInstance(data.instance)) {
-      showInstanceModal(data.language || getCurrentLang() || 'zh-cn', data.instance);
+    if (!s.instancePromptDismissed && (!site || !validateAndNormalizeInstance(site.instance))) {
+      showInstanceModal();
     }
   });
 
-  // Focus management
+  // 初次加载：焦点落在 quick-toot-row，而不是 habit 列表第一行
+  if (!isFromSubmit && !lastFocusedId) {
+    document.getElementById('quickTootBtn')?.focus();
+    return;
+  }
+
   manageFocus(isFromSubmit, lastFocusedId, lastFocusedClass);
 }
 
-// ============== Add Habit ==============
-function setupAddHabitButton() {
-  const addHabitBtn = document.getElementById('addHabit');
-  const newHabitEl = document.getElementById('newHabit');
+// ===== 实例 Tab 渲染 =====
+function renderSiteTabs(sites, activeSiteId) {
+  const bar = document.getElementById('siteTabBar');
+  bar.innerHTML = '';
 
-  addHabitBtn.addEventListener('click', () => {
-    const title = newHabitEl.value.trim();
-    if (!title) return;
+  // 只有多实例时才显示 tab 栏
+  bar.style.display = sites.length > 0 ? 'flex' : 'none';
 
-    chrome.storage.local.get({ habits: [] }, data => {
-      if (data.habits.length >= 10) return;
+  sites.forEach(site => {
+    const btn = document.createElement('button');
+    btn.className = 'site-tab' + (site.id === activeSiteId ? ' active' : '');
+    const displayName = getSiteDisplayName(site);
+    btn.textContent = displayName;
+    // 如果是截断的域名，加 title 显示完整域名
+    if (!site.name || !site.name.trim()) btn.title = site.instance || '';
+    btn.addEventListener('click', () => {
+      chrome.storage.local.set({ activeSiteId: site.id }, loadData);
+    });
+    bar.appendChild(btn);
+  });
 
-      let shortcutSlot = null;
-      let shortcutAction = null;
-      if (data.habits.length < 3) {
-        const usedSlots = data.habits.map(h => h.shortcutSlot).filter(s => s);
-        for (let i = 1; i <= 3; i++) {
-          if (!usedSlots.includes(i)) {
-            shortcutSlot = i;
-            shortcutAction = 'checkIn';
-            break;
-          }
-        }
-      }
+  // + 添加实例
+  const addBtn = document.createElement('button');
+  addBtn.className = 'site-tab site-tab-add';
+  addBtn.textContent = '+ 添加实例';
+  addBtn.addEventListener('click', () => showSiteModal(null));
+  bar.appendChild(addBtn);
+}
 
-      data.habits.push({
-        id: Date.now(),
-        title,
-        records: {},
-        bestStreak: 0,
-        totalDone: 0,
-        link: null,
-        shortcutSlot,
-        shortcutAction,
-        customTemplate: ''
-      });
+// ===== 写单条嘟嘟徽章 =====
+function renderQuickTootBadge(site) {
+  const badge = document.getElementById('quickTootBadge');
+  const siteName = document.getElementById('quickTootSiteName');
 
-      chrome.storage.local.set({ habits: data.habits }, () => {
-        newHabitEl.value = '';
-        loadData(true);
-      });
+  // 更新站点名
+  if (siteName) {
+    siteName.textContent = site ? `>> ${getSiteDisplayName(site)}` : '';
+  }
+
+  // 更新快捷键徽章
+  if (site && site.quickTootSlot) {
+    badge.innerHTML = `${ICONS.shortcutBadge} ${site.quickTootSlot}`;
+    badge.style.display = '';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+// ===== 写单条嘟嘟按钮 =====
+document.getElementById('quickTootBtn').addEventListener('click', () => {
+  chrome.storage.local.get(null, (data) => {
+    const site = getActiveSite(data);
+    if (!site) return;
+    if (!validateAndNormalizeInstance(site.instance)) { showInstanceModal(); return; }
+    if (site.enableThreading) {
+      chrome.runtime.sendMessage({ action: 'showThreadModalFromPopup', siteId: site.id, habitId: null, text: '' });
+      window.close();
+    } else {
+      const inst = validateAndNormalizeInstance(site.instance);
+      window.open(inst + '/share?text=');
+    }
+  });
+});
+
+function setupQuickTootOptions() {
+  document.getElementById('quickTootOptionsBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    chrome.storage.local.get(null, (data) => {
+      const site = getActiveSite(data);
+      if (!site) return;
+      showShortcutModalForQuickToot(site, data.sites || []);
     });
   });
 }
 
-// ============== Enable Threading ==============
-function setupEnableThreading() {
-  const enableThreadingInput = document.getElementById('enableThreadingInput');
+// ===== 添加习惯 =====
+function setupAddHabitButton() {
+  const addBtn = document.getElementById('addHabit');
+  const input = document.getElementById('newHabit');
+  addBtn.addEventListener('click', () => {
+    const title = input.value.trim();
+    if (!title) return;
+    chrome.storage.local.get(null, (data) => {
+      const sites = data.sites || [];
+      const si = sites.findIndex(s => s.id === data.activeSiteId);
+      if (si === -1) return;
+      const habits = sites[si].habits || [];
+      if (habits.length >= 10) return;
 
-  enableThreadingInput.addEventListener('change', () => {
-    const instanceInput = document.getElementById('instanceInput');
-    const instance = instanceInput.value.trim();
-    const lang = getCurrentLang();
-    const L = LOCALES[lang] || LOCALES['zh-cn'];
-
-    if (enableThreadingInput.checked) {
-      if (!instance) {
-        alert(L.alertInstanceRequired);
-        enableThreadingInput.checked = false;
-        return;
+      // 自动分配第一个空闲快捷键槽
+      const used = getUsedSlots(sites);
+      let shortcutSlot = null, shortcutAction = null;
+      if (habits.length < 3) {
+        for (let i = 1; i <= 3; i++) {
+          if (!used[i]) { shortcutSlot = i; shortcutAction = 'checkIn'; break; }
+        }
       }
 
-      chrome.runtime.sendMessage({ action: 'checkToken' }, async response => {
-        if (!response.hasToken) {
-          const res = await new Promise(resolve => {
-            chrome.runtime.sendMessage({ action: 'startOAuth', instance: instance }, resolve);
-          });
-          if (res.success) {
-            await chrome.storage.local.set({ enableThreading: enableThreadingInput.checked });
-          } else {
-            alert(L.alertEnableThreadingError + res.error);
-            enableThreadingInput.checked = false;
-          }
-        } else {
-          await chrome.storage.local.set({ enableThreading: enableThreadingInput.checked });
-        }
+      habits.push({
+        id: Date.now(), title, records: {},
+        bestStreak: 0, totalDone: 0, link: null,
+        shortcutSlot, shortcutAction, customTemplate: ''
       });
-    } else {
-      chrome.storage.local.set({ enableThreading: false });
-    }
-  });
-
-  enableThreadingInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      enableThreadingInput.click();
-    }
+      sites[si].habits = habits;
+      chrome.storage.local.set({ sites }, () => { input.value = ''; loadData(true); });
+    });
   });
 }
 
-// ============== Settings Save ==============
-function setupSettingsInputs() {
+// ===== 串文开关 =====
+function setupEnableThreading() {
+  const cb = document.getElementById('enableThreadingInput');
+  cb.addEventListener('change', () => {
+    chrome.storage.local.get(null, (data) => {
+      const sites = data.sites || [];
+      const si = sites.findIndex(s => s.id === data.activeSiteId);
+      if (si === -1) return;
+      const site = sites[si];
+
+      if (cb.checked) {
+        if (!validateAndNormalizeInstance(site.instance)) {
+          alert('请先填写 Mastodon 实例地址');
+          cb.checked = false; return;
+        }
+        chrome.runtime.sendMessage({ action: 'checkToken', siteId: site.id }, async res => {
+          if (!res.hasToken) {
+            const r = await new Promise(resolve =>
+              chrome.runtime.sendMessage({ action: 'startOAuth', siteId: site.id }, resolve)
+            );
+            if (r.success) {
+              // OAuth 完成后 background 已将 accessToken 写入 storage。
+              // 必须重新从 storage 读取，不能使用回调外层的旧 sites 对象，
+              // 否则会把 accessToken: null 的旧数据覆盖回去。
+              chrome.storage.local.get({ sites: [] }, fresh => {
+                const freshSites = fresh.sites || [];
+                const freshSi = freshSites.findIndex(s => s.id === site.id);
+                if (freshSi !== -1) {
+                  freshSites[freshSi].enableThreading = true;
+                  chrome.storage.local.set({ sites: freshSites });
+                }
+              });
+            } else {
+              alert('授权失败：' + r.error);
+              cb.checked = false;
+            }
+          } else {
+            // 已有 token，同样重新读取后再写，避免覆盖其他并发写入
+            chrome.storage.local.get({ sites: [] }, fresh => {
+              const freshSites = fresh.sites || [];
+              const freshSi = freshSites.findIndex(s => s.id === site.id);
+              if (freshSi !== -1) {
+                freshSites[freshSi].enableThreading = true;
+                chrome.storage.local.set({ sites: freshSites });
+              }
+            });
+          }
+        });
+      } else {
+        sites[si].enableThreading = false;
+        chrome.storage.local.set({ sites });
+      }
+    });
+  });
+
+  cb.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); cb.click(); } });
+}
+
+// ===== 实例设置保存 =====
+function setupSiteSettings() {
   const instanceInput = document.getElementById('instanceInput');
   const emojiDoneInput = document.getElementById('emojiDoneInput');
   const emojiEmptyInput = document.getElementById('emojiEmptyInput');
   const templateInput = document.getElementById('templateInput');
   const visibilitySelect = document.getElementById('visibilitySelect');
-  const saveSettingsBtn = document.getElementById('saveSettings');
-  const saveWarning = document.getElementById('saveWarning');
-  const saveMessage = document.getElementById('saveMessage');
+  const saveBtn = document.getElementById('saveSiteSettings');
+  const saveWarning = document.getElementById('siteSaveWarning');
+  const saveMessage = document.getElementById('siteSaveMessage');
 
-  const inputs = [instanceInput, emojiDoneInput, emojiEmptyInput, templateInput];
-  inputs.forEach(input => {
-    input.addEventListener('input', () => {
-      saveWarning.style.display = 'block';
-      saveMessage.style.display = 'none';
-    });
+  [document.getElementById('siteNameInput'), instanceInput, emojiDoneInput, emojiEmptyInput, templateInput].forEach(el => {
+    el.addEventListener('input', () => { saveWarning.style.display = 'block'; saveMessage.style.display = 'none'; });
   });
+  visibilitySelect.addEventListener('change', () => { saveWarning.style.display = 'block'; saveMessage.style.display = 'none'; });
 
-  visibilitySelect.addEventListener('change', () => {
-    saveWarning.style.display = 'block';
-    saveMessage.style.display = 'none';
-  });
+  saveBtn.addEventListener('click', () => {
+    chrome.storage.local.get(null, (data) => {
+      const sites = data.sites || [];
+      const si = sites.findIndex(s => s.id === data.activeSiteId);
+      if (si === -1) return;
 
-  saveSettingsBtn.addEventListener('click', () => {
-    const instance = instanceInput.value.trim();
-    const emojiDone = emojiDoneInput.value.trim();
-    const emojiEmpty = emojiEmptyInput.value.trim();
-    const enableThreading = document.getElementById('enableThreadingInput').checked;
-    const template = templateInput.value;
-    const visibility = visibilitySelect.value;
+      const oldInstance = sites[si].instance || '';
+      const newInstance = normalizeInstance(instanceInput.value.trim());
 
-    chrome.storage.local.get({ language: 'zh-cn', templates: {}, instance: '' }, data => {
-      const templates = data.templates || {};
-      const lang = data.language || 'zh-cn';
-      const oldInstance = data.instance || '';
+      sites[si].name = document.getElementById('siteNameInput').value.trim();
+      sites[si].instance = newInstance;
+      sites[si].emojiDone = emojiDoneInput.value.trim() || '🔥';
+      sites[si].emojiEmpty = emojiEmptyInput.value.trim() || '⬜';
+      sites[si].template = templateInput.value;
+      sites[si].defaultVisibility = visibilitySelect.value;
 
-      templates[lang] = templateInput.value;
-
-      const settingsToSet = {
-        instance: instance,
-        emojiDone: emojiDone || '🔥',
-        emojiEmpty: emojiEmpty || '⬜',
-        enableThreading: enableThreading,
-        templates: templates,
-        language: data.language,
-        defaultVisibility: visibility
-      };
-
-      if (instance !== oldInstance) {
-        settingsToSet.accessToken = null;
-        if (document.getElementById('enableThreadingInput').checked) {
-          settingsToSet.enableThreading = false;
-          const recheckThreadingNotice = document.getElementById('recheckThreadingNotice');
-          recheckThreadingNotice.style.display = 'block';
+      if (newInstance !== oldInstance) {
+        sites[si].accessToken = null;
+        sites[si].clients = {};
+        if (sites[si].enableThreading) {
+          sites[si].enableThreading = false;
+          document.getElementById('recheckThreadingNotice').style.display = 'block';
         }
       }
 
-      chrome.storage.local.set(settingsToSet, () => {
-        loadData();
-        const recheckThreadingNotice = document.getElementById('recheckThreadingNotice');
-        recheckThreadingNotice.style.display = 'block';
-
+      chrome.storage.local.set({ sites }, () => {
         saveWarning.style.display = 'none';
         saveMessage.style.display = 'block';
-        setTimeout(() => {
-          saveMessage.style.display = 'none';
-        }, 2000);
+        setTimeout(() => saveMessage.style.display = 'none', 2000);
+        loadData();
       });
+    });
+  });
+
+  // 删除实例
+  document.getElementById('deleteSiteBtn').addEventListener('click', () => {
+    if (!confirm('确定删除此实例？删除后该实例的所有话题数据都会消失。此操作无法撤销。')) return;
+    chrome.storage.local.get(null, (data) => {
+      let sites = data.sites || [];
+      const toDelete = data.activeSiteId;
+      sites = sites.filter(s => s.id !== toDelete);
+      const newActiveId = sites.length > 0 ? sites[0].id : null;
+      chrome.storage.local.set({ sites, activeSiteId: newActiveId }, loadData);
     });
   });
 }
 
-// ============== Data Export/Import ==============
-function setupDataExportImport() {
-  const exportDataBtn = document.getElementById('exportData');
-  const importBtn = document.getElementById('importBtn');
-  const importFileInput = document.getElementById('importFileInput');
+function updateSiteSettingsDisplay(site) {
+  document.getElementById('siteNameInput').value = site.name || '';
+  document.getElementById('instanceInput').value = site.instance || '';
+  document.getElementById('emojiDoneInput').value = site.emojiDone || '🔥';
+  document.getElementById('emojiEmptyInput').value = site.emojiEmpty || '⬜';
+  document.getElementById('enableThreadingInput').checked = site.enableThreading || false;
+  document.getElementById('visibilitySelect').value = site.defaultVisibility || 'public';
+  // 若实例模板为空，显示默认模板
+  const templateInput = document.getElementById('templateInput');
+  templateInput.value = site.template === null ? defaultTemplate : site.template;
+  templateInput.placeholder = defaultTemplate;
+}
 
-  exportDataBtn.addEventListener('click', exportData);
+// ===== 全局设置 =====
+function setupGlobalSettings() {
+  document.getElementById('popupShortcutOpenChromeLink').addEventListener('click', () => {
+    chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
+  });
+  document.getElementById('shortcutOpenChromeLink').addEventListener('click', () => {
+    chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
+  });
+}
 
-  importBtn.addEventListener('click', () => {
-    importFileInput.value = '';
-    importFileInput.click();
+// ===== 数据导入导出 =====
+function setupDataButtons() {
+  // 实例级：备份此实例话题数据
+  document.getElementById('exportSiteData').addEventListener('click', () => {
+    chrome.storage.local.get({ activeSiteId: null }, d => exportBackup(d.activeSiteId));
   });
 
-  importFileInput.addEventListener('change', () => {
-    const file = importFileInput.files[0];
-    importData(file, () => loadData());
+  // 实例级：恢复此实例话题数据
+  const importSiteBtn = document.getElementById('importSiteBtn');
+  const importSiteFile = document.getElementById('importSiteFileInput');
+  importSiteBtn.addEventListener('click', () => { importSiteFile.value = ''; importSiteFile.click(); });
+  importSiteFile.addEventListener('change', () => {
+    chrome.storage.local.get({ activeSiteId: null }, d =>
+      importBackup(importSiteFile.files[0], d.activeSiteId, loadData)
+    );
+  });
+
+  // 全局：备份全部数据（不含凭证）
+  document.getElementById('exportBackupAll').addEventListener('click', () => exportBackup(null));
+
+  // 全局：导出迁移文件（含凭证，有警告）
+  document.getElementById('exportMigration').addEventListener('click', exportMigration);
+
+  // 全局：导入（自动识别备份文件 vs 迁移文件）
+  const importAllBtn = document.getElementById('importAllBtn');
+  const importAllFile = document.getElementById('importAllFileInput');
+  importAllBtn.addEventListener('click', () => { importAllFile.value = ''; importAllFile.click(); });
+  importAllFile.addEventListener('change', () => {
+    const file = importAllFile.files[0];
+    if (!file) return;
+    // 读文件头判断是备份还是迁移文件，根据是否含凭证路由到对应函数
+    const peek = new FileReader();
+    peek.onload = () => {
+      try {
+        const parsed = JSON.parse(peek.result);
+        // 兼容旧版格式（顶层含 accessToken）和新版格式（sites 数组内含 accessToken）
+        const hasToken =
+          (!parsed.sites && parsed.accessToken) ||
+          (parsed.sites || []).some(
+            s => s.accessToken || (s.clients && Object.keys(s.clients).length > 0)
+          );
+        if (hasToken) {
+          importMigration(file, loadData);
+        } else {
+          importBackup(file, null, loadData);
+        }
+      } catch {
+        importBackup(file, null, loadData); // 解析失败交给 importBackup 统一报错
+      }
+    };
+    peek.readAsText(file);
   });
 }
 
-// ============== Instance Modal ==============
-function showInstanceModal(lang, currentInstance) {
-  const overlayId = 'instanceModalOverlay';
-  showModal(overlayId);
+// ===== 添加/编辑实例 Modal =====
+function showSiteModal(siteId) {
+  const overlayId = 'siteModalOverlay';
+  const title = document.getElementById('siteModalTitle');
+  const nameInput = document.getElementById('siteModalNameInput');
+  const instanceInput = document.getElementById('siteModalInstanceInput');
+  const errorEl = document.getElementById('siteModalError');
+  const saveBtn = document.getElementById('siteModalSaveBtn');
+  const cancelBtn = document.getElementById('siteModalCancelBtn');
 
-  const L = LOCALES[lang] || LOCALES['zh-cn'];
-  const instanceModalTitle = document.getElementById('instanceModalTitle');
-  const instanceModalMessage = document.getElementById('instanceModalMessage');
-  const instanceModalInput = document.getElementById('instanceModalInput');
-  const instanceModalError = document.getElementById('instanceModalError');
-  const instanceSaveBtn = document.getElementById('instanceSaveBtn');
-  const instanceCancelBtn = document.getElementById('instanceCancelBtn');
+  errorEl.style.display = 'none';
 
-  if (instanceModalTitle) instanceModalTitle.textContent = L.instanceModalTitle;
-  if (instanceModalMessage) instanceModalMessage.textContent = L.instanceModalMessage;
-  if (instanceModalInput) instanceModalInput.placeholder = L.instancePlaceholder;
-  if (instanceModalError) instanceModalError.style.display = 'none';
-
-  if (instanceModalInput) {
-    instanceModalInput.value = currentInstance && currentInstance !== 'https://example.social' ? currentInstance : '';
+  if (siteId) {
+    title.textContent = '编辑实例';
+    chrome.storage.local.get({ sites: [] }, d => {
+      const site = d.sites.find(s => s.id === siteId);
+      if (site) { nameInput.value = site.name || ''; instanceInput.value = site.instance || ''; }
+    });
+  } else {
+    title.textContent = '添加实例';
+    nameInput.value = '';
+    instanceInput.value = '';
   }
 
-  const modal = document.getElementById('instanceModal');
-  modal.classList.add('open');
-  trapFocus(modal);
-  focusModalInput('instanceModal');
-
-  instanceSaveBtn.onclick = () => {
-    const raw = instanceModalInput.value.trim();
-    const val = normalizeInstance(raw);
-    const lang = getCurrentLang() || 'zh-cn';
-    const L = LOCALES[lang] || LOCALES['zh-cn'];
-
-    if (!raw || !validateAndNormalizeInstance(raw)) {
-      instanceModalError.textContent = L.instanceInvalid || 'Please enter a valid address';
-      instanceModalError.style.display = 'block';
-      return;
-    }
-
-    chrome.storage.local.set({ instance: val, instancePromptDismissed: false }, () => {
-      document.getElementById('instanceInput').value = val;
-      hideModal(overlayId);
-      loadData();
-    });
-  };
-
-  instanceCancelBtn.onclick = () => {
-    chrome.storage.local.set({ instancePromptDismissed: true }, () => hideModal(overlayId));
-  };
-}
-
-// ============== Link Modal ==============
-function showLinkModal(habit) {
-  const overlayId = 'linkModalOverlay';
   showModal(overlayId);
-
-  currentEditingHabitId = habit.id;
-  const linkModalInput = document.getElementById('linkModalInput');
-  const linkModalError = document.getElementById('linkModalError');
-  const linkModalSaveBtn = document.getElementById('linkModalSaveBtn');
-  const linkModalDeleteBtn = document.getElementById('linkModalDeleteBtn');
-  const linkModalCancelBtn = document.getElementById('linkModalCancelBtn');
-
-  if (linkModalInput) {
-    linkModalInput.value = habit.link || '';
-    linkModalInput.focus();
-  }
-  if (linkModalError) linkModalError.style.display = 'none';
-
-  const modal = document.getElementById('linkModal');
-  modal.classList.add('open');
+  const modal = document.getElementById('siteModal');
   trapFocus(modal);
-  focusModalInput('linkModal');
-
-  linkModalSaveBtn.onclick = () => {
-    const raw = linkModalInput.value.trim();
-    if (raw && !/^https?:\/\//i.test(raw)) {
-      linkModalError.textContent = 'Please enter a valid URL starting with http(s)://';
-      linkModalError.style.display = 'block';
-      return;
-    }
-
-    chrome.storage.local.get({ habits: [] }, data => {
-      const h = data.habits || [];
-      const i = h.findIndex(x => x.id === currentEditingHabitId);
-      if (i === -1) {
-        hideModal(overlayId);
-        return;
-      }
-      h[i].link = raw || null;
-      chrome.storage.local.set({ habits: h }, () => {
-        hideModal(overlayId);
-        loadData();
-      });
-    });
-  };
-
-  linkModalDeleteBtn.onclick = () => {
-    chrome.storage.local.get({ habits: [] }, data => {
-      const h = data.habits || [];
-      const i = h.findIndex(x => x.id === currentEditingHabitId);
-      if (i === -1) {
-        hideModal(overlayId);
-        return;
-      }
-      h[i].link = null;
-      chrome.storage.local.set({ habits: h }, () => {
-        hideModal(overlayId);
-        loadData();
-      });
-    });
-  };
-
-  linkModalCancelBtn.onclick = () => hideModal(overlayId);
-}
-
-// ============== Custom Template Modal ==============
-function showCustomTemplateModal(habit) {
-  const overlayId = 'customTemplateModalOverlay';
-  showModal(overlayId);
-
-  currentEditingHabitId = habit.id;
-  const customTemplateModalInput = document.getElementById('customTemplateModalInput');
-  const customTemplateModalSaveBtn = document.getElementById('customTemplateModalSaveBtn');
-  const customTemplateModalDeleteBtn = document.getElementById('customTemplateModalDeleteBtn');
-  const customTemplateModalCancelBtn = document.getElementById('customTemplateModalCancelBtn');
-
-  if (customTemplateModalInput) {
-    customTemplateModalInput.value = habit.customTemplate || '';
-    customTemplateModalInput.focus();
-  }
-
-  const modal = document.getElementById('customTemplateModal');
-  modal.classList.add('open');
-  trapFocus(modal);
-  focusModalInput('customTemplateModal');
-
-  customTemplateModalSaveBtn.onclick = () => {
-    const customTemplate = customTemplateModalInput.value.trim();
-
-    chrome.storage.local.get({ habits: [] }, data => {
-      const habits = data.habits || [];
-      const index = habits.findIndex(h => h.id === currentEditingHabitId);
-      if (index === -1) {
-        hideModal(overlayId);
-        return;
-      }
-
-      habits[index].customTemplate = customTemplate || null;
-      chrome.storage.local.set({ habits }, () => {
-        hideModal(overlayId);
-        loadData();
-      });
-    });
-  };
-
-  customTemplateModalDeleteBtn.onclick = () => {
-    chrome.storage.local.get({ habits: [] }, data => {
-      const h = data.habits || [];
-      const i = h.findIndex(x => x.id === currentEditingHabitId);
-      if (i === -1) {
-        hideModal(overlayId);
-        return;
-      }
-      h[i].customTemplate = null;
-      chrome.storage.local.set({ habits: h }, () => {
-        hideModal(overlayId);
-        loadData();
-      });
-    });
-  };
-
-  customTemplateModalCancelBtn.onclick = () => hideModal(overlayId);
-}
-
-// ============== Bind Thread Modal ==============
-function showBindThreadModal(habit) {
-  const modal = document.getElementById('bindThreadModal');
-  const overlayId = 'bindThreadModalOverlay';
-  showModal(overlayId);
-
-  const input = document.getElementById('bindThreadModalInput');
-  const errorEl = document.getElementById('bindThreadModalError');
-  const saveBtn = document.getElementById('bindThreadModalSaveBtn');
-  const removeBtn = document.getElementById('bindThreadModalRemoveBtn');
-  const cancelBtn = document.getElementById('bindThreadModalCancelBtn');
-
-  const lang = getCurrentLang();
-  const L = LOCALES[lang] || LOCALES['zh-cn'];
-
-  document.getElementById('bindThreadModalTitle').textContent = L.bindThreadModalTitle;
-  document.getElementById('bindThreadModalInfo').innerHTML = L.bindThreadInfo;
-  input.placeholder = L.bindThreadPlaceholder;
-  saveBtn.textContent = L.bindThreadSave;
-  removeBtn.textContent = L.bindThreadRemove;
-  cancelBtn.textContent = L.cancelBtn;
-
-  if (input) {
-    input.value = habit.root_status_id || '';
-    input.focus();
-  }
-  if (errorEl) errorEl.style.display = 'none';
-
-  modal.classList.add('open');
-  trapFocus(modal);
-  focusModalInput('bindThreadModal');
+  focusModalInput('siteModal');
 
   saveBtn.onclick = () => {
-    const id = input.value.trim();
-    if (!id) {
-      errorEl.textContent = 'Please enter a toot ID';
+    const name = nameInput.value.trim();
+    const raw = instanceInput.value.trim();
+    const instance = normalizeInstance(raw);
+    if (!raw || !validateAndNormalizeInstance(raw)) {
+      errorEl.textContent = '请输入正确的实例地址，例如: mastodon.social';
       errorEl.style.display = 'block';
       return;
     }
-    chrome.storage.local.get({ habits: [] }, data => {
-      const hlist = data.habits || [];
-      const idx = hlist.findIndex(h => h.id === habit.id);
-      if (idx !== -1) {
-        hlist[idx].root_status_id = id;
-        hlist[idx].last_status_id = id;
-        chrome.storage.local.set({ habits: hlist }, () => {
-          hideModal(overlayId);
-          loadData();
-        });
+    chrome.storage.local.get(null, (data) => {
+      const sites = data.sites || [];
+      if (siteId) {
+        const si = sites.findIndex(s => s.id === siteId);
+        if (si !== -1) { sites[si].name = name; sites[si].instance = instance; }
+      } else {
+        const newSite = {
+          id: Date.now(), name, instance,
+          enableThreading: false, defaultVisibility: 'public',
+          template: null, emojiDone: '🔥', emojiEmpty: '⬜',
+          habits: [], accessToken: null, clients: {}, quickTootSlot: null
+        };
+        sites.push(newSite);
+        chrome.storage.local.set({ sites, activeSiteId: newSite.id }, () => { hideModal(overlayId); loadData(); });
+        return;
       }
-    });
-  };
-
-  removeBtn.onclick = () => {
-    chrome.storage.local.get({ habits: [] }, data => {
-      const hlist = data.habits || [];
-      const idx = hlist.findIndex(h => h.id === habit.id);
-      if (idx !== -1) {
-        delete hlist[idx].root_status_id;
-        delete hlist[idx].last_status_id;
-        chrome.storage.local.set({ habits: hlist }, () => {
-          hideModal(overlayId);
-          loadData();
-        });
-      }
+      chrome.storage.local.set({ sites }, () => { hideModal(overlayId); loadData(); });
     });
   };
 
   cancelBtn.onclick = () => hideModal(overlayId);
 }
 
-// ============== Shortcut Modal ==============
-const SLOT_TO_COMMAND = {
-  1: 'shortcut1',
-  2: 'shortcut2',
-  3: 'shortcut3'
-};
+// ===== 首次引导 instance Modal =====
+function showInstanceModal() {
+  const overlayId = 'instanceModalOverlay';
+  showModal(overlayId);
+  const instanceInput = document.getElementById('instanceModalInput');
+  const errorEl = document.getElementById('instanceModalError');
+  const saveBtn = document.getElementById('instanceSaveBtn');
+  const cancelBtn = document.getElementById('instanceCancelBtn');
+  errorEl.style.display = 'none';
+  instanceInput.value = '';
+  const modal = document.getElementById('instanceModal');
+  trapFocus(modal);
+  focusModalInput('instanceModal');
 
-const DEFAULT_SHORTCUT_TEXT = {
-  1: 'Ctrl + Shift + 1',
-  2: 'Ctrl + Shift + 2',
-  3: 'Ctrl + Shift + 3'
-};
+  saveBtn.onclick = () => {
+    const raw = instanceInput.value.trim();
+    if (!raw || !validateAndNormalizeInstance(raw)) {
+      errorEl.textContent = '请输入正确的地址，例如: mastodon.social';
+      errorEl.style.display = 'block';
+      return;
+    }
+    const instance = normalizeInstance(raw);
+    chrome.storage.local.get(null, (data) => {
+      const sites = data.sites || [];
+      if (sites.length === 0) {
+        const newSite = {
+          id: Date.now(), name: '', instance,
+          enableThreading: false, defaultVisibility: 'public',
+          template: null, emojiDone: '🔥', emojiEmpty: '⬜',
+          habits: [], accessToken: null, clients: {}, quickTootSlot: null
+        };
+        sites.push(newSite);
+        chrome.storage.local.set({ sites, activeSiteId: newSite.id, instancePromptDismissed: true }, () => { hideModal(overlayId); loadData(); });
+      } else {
+        const si = sites.findIndex(s => s.id === data.activeSiteId);
+        if (si !== -1) sites[si].instance = instance;
+        chrome.storage.local.set({ sites, instancePromptDismissed: true }, () => { hideModal(overlayId); loadData(); });
+      }
+    });
+  };
 
-function updateCurrentShortcutInfo(slot) {
-  const lang = getCurrentLang();
-  const L = LOCALES[lang] || LOCALES['zh-cn'];
-  const infoEl = document.getElementById('currentShortcut');
+  cancelBtn.onclick = () => {
+    chrome.storage.local.set({ instancePromptDismissed: true }, () => hideModal(overlayId));
+  };
+}
 
-  if (!slot) {
-    if (infoEl) infoEl.textContent = L.shortcutCurrentInfo + '-';
-    return;
-  }
+// ===== Link Modal =====
+function showLinkModal(habit) {
+  const overlayId = 'linkModalOverlay';
+  showModal(overlayId);
+  currentEditingHabitId = habit.id;
+  const input = document.getElementById('linkModalInput');
+  const errorEl = document.getElementById('linkModalError');
+  const saveBtn = document.getElementById('linkModalSaveBtn');
+  const deleteBtn = document.getElementById('linkModalDeleteBtn');
+  const cancelBtn = document.getElementById('linkModalCancelBtn');
+  input.value = habit.link || '';
+  errorEl.style.display = 'none';
+  const modal = document.getElementById('linkModal');
+  trapFocus(modal);
+  focusModalInput('linkModal');
 
-  const commandName = SLOT_TO_COMMAND[slot];
+  saveBtn.onclick = () => {
+    const raw = input.value.trim();
+    if (raw && !/^https?:\/\//i.test(raw)) {
+      errorEl.textContent = '请输入以 http(s):// 开头的完整网址';
+      errorEl.style.display = 'block'; return;
+    }
+    updateHabitField(currentEditingHabitId, 'link', raw || null, () => { hideModal(overlayId); loadData(); });
+  };
+  deleteBtn.onclick = () => updateHabitField(currentEditingHabitId, 'link', null, () => { hideModal(overlayId); loadData(); });
+  cancelBtn.onclick = () => hideModal(overlayId);
+}
 
-  chrome.commands.getAll(commands => {
-    const cmd = commands.find(c => c.name === commandName);
+// ===== Custom Template Modal =====
+function showCustomTemplateModal(habit) {
+  const overlayId = 'customTemplateModalOverlay';
+  showModal(overlayId);
+  currentEditingHabitId = habit.id;
+  const input = document.getElementById('customTemplateModalInput');
+  const saveBtn = document.getElementById('customTemplateModalSaveBtn');
+  const deleteBtn = document.getElementById('customTemplateModalDeleteBtn');
+  const cancelBtn = document.getElementById('customTemplateModalCancelBtn');
+  input.value = habit.customTemplate || '';
+  const modal = document.getElementById('customTemplateModal');
+  trapFocus(modal);
+  focusModalInput('customTemplateModal');
 
-    if (cmd && cmd.shortcut) {
-      if (infoEl) infoEl.textContent = L.shortcutCurrentInfo + cmd.shortcut;
-    } else if (DEFAULT_SHORTCUT_TEXT[slot]) {
-      if (infoEl) infoEl.textContent = L.shortcutCurrentInfo + DEFAULT_SHORTCUT_TEXT[slot];
+  saveBtn.onclick = () => {
+    updateHabitField(currentEditingHabitId, 'customTemplate', input.value.trim() || null, () => { hideModal(overlayId); loadData(); });
+  };
+  deleteBtn.onclick = () => updateHabitField(currentEditingHabitId, 'customTemplate', null, () => { hideModal(overlayId); loadData(); });
+  cancelBtn.onclick = () => hideModal(overlayId);
+}
+
+// ===== Bind Thread Modal =====
+function showBindThreadModal(habit) {
+  const overlayId = 'bindThreadModalOverlay';
+  showModal(overlayId);
+  currentEditingHabitId = habit.id;
+  const input = document.getElementById('bindThreadModalInput');
+  const errorEl = document.getElementById('bindThreadModalError');
+  const saveBtn = document.getElementById('bindThreadModalSaveBtn');
+  const removeBtn = document.getElementById('bindThreadModalRemoveBtn');
+  const cancelBtn = document.getElementById('bindThreadModalCancelBtn');
+  input.value = habit.root_status_id || '';
+  errorEl.style.display = 'none';
+  const modal = document.getElementById('bindThreadModal');
+  trapFocus(modal);
+  focusModalInput('bindThreadModal');
+
+  saveBtn.onclick = () => {
+    const id = input.value.trim();
+    if (!id) { errorEl.textContent = '请输入嘟文编号'; errorEl.style.display = 'block'; return; }
+    chrome.storage.local.get(null, (data) => {
+      const sites = data.sites || [];
+      const si = sites.findIndex(s => s.id === data.activeSiteId);
+      if (si === -1) return;
+      const hi = sites[si].habits.findIndex(h => h.id === currentEditingHabitId);
+      if (hi !== -1) { sites[si].habits[hi].root_status_id = id; sites[si].habits[hi].last_status_id = id; }
+      chrome.storage.local.set({ sites }, () => { hideModal(overlayId); loadData(); });
+    });
+  };
+  removeBtn.onclick = () => {
+    chrome.storage.local.get(null, (data) => {
+      const sites = data.sites || [];
+      const si = sites.findIndex(s => s.id === data.activeSiteId);
+      if (si === -1) return;
+      const hi = sites[si].habits.findIndex(h => h.id === currentEditingHabitId);
+      if (hi !== -1) { delete sites[si].habits[hi].root_status_id; delete sites[si].habits[hi].last_status_id; }
+      chrome.storage.local.set({ sites }, () => { hideModal(overlayId); loadData(); });
+    });
+  };
+  cancelBtn.onclick = () => hideModal(overlayId);
+}
+
+// ===== Shortcut Modal =====
+const SLOT_TO_COMMAND = { 1: 'shortcut1', 2: 'shortcut2', 3: 'shortcut3' };
+const DEFAULT_SHORTCUT_TEXT = { 1: 'Ctrl + Shift + 1', 2: 'Ctrl + Shift + 2', 3: 'Ctrl + Shift + 3' };
+
+function renderSlotOccupiedHints(slotSelect, usedSlots, excludeKey) {
+  // excludeKey: 'quickToot:{siteId}' or 'habit:{habitId}' — 排除当前正在编辑的对象自身
+  Array.from(slotSelect.options).forEach(opt => {
+    const slot = Number(opt.value);
+    if (!slot) return;
+    const occupant = usedSlots[slot];
+    if (occupant) {
+      const isSelf = (excludeKey === `quickToot:${occupant.siteId}` && occupant.type === 'quickToot') ||
+                     (excludeKey === `habit:${occupant.habitId}` && occupant.type === 'habit');
+      if (!isSelf) {
+        const who = occupant.type === 'quickToot'
+          ? `${occupant.siteName} · 写单条嘟嘟`
+          : `${occupant.siteName} · ${occupant.habitTitle}`;
+        opt.textContent = `槽位 ${slot}（已被「${who}」占用）`;
+      } else {
+        opt.textContent = `槽位 ${slot}（默认 Ctrl + Shift + ${slot}）`;
+      }
     } else {
-      if (infoEl) infoEl.textContent = L.shortcutCurrentInfo + '-';
+      opt.textContent = `槽位 ${slot}（默认 Ctrl + Shift + ${slot}）`;
     }
   });
 }
 
+function updateCurrentShortcutInfo(slot) {
+  const infoEl = document.getElementById('currentShortcut');
+  if (!slot) { if (infoEl) infoEl.textContent = '当前快捷键：-'; return; }
+  chrome.commands.getAll(commands => {
+    const cmd = commands.find(c => c.name === SLOT_TO_COMMAND[slot]);
+    if (infoEl) infoEl.textContent = '当前快捷键：' + (cmd && cmd.shortcut ? cmd.shortcut : DEFAULT_SHORTCUT_TEXT[slot] || '-');
+  });
+}
+
+// 串文发嘟快捷键 modal
 function showShortcutModal(habit) {
+  shortcutModalMode = 'habit';
+  const overlayId = 'shortcutModalOverlay';
+  showModal(overlayId);
+  currentEditingHabitId = habit.id;
+
+  document.getElementById('shortcutModalTitle').textContent = '绑定快捷键';
+  document.getElementById('shortcutModalInfo').textContent = `由于 Chrome 浏览器的限制，你最多可以设置 3 个发嘟快捷键。`;
+  document.getElementById('shortcutActionRow').style.display = '';
+
+  const slotSelect = document.getElementById('slotSelect');
+  const actionSelect = document.getElementById('actionSelect');
+  const errorEl = document.getElementById('shortcutModalError');
+  const saveBtn = document.getElementById('shortcutModalSaveBtn');
+  const clearBtn = document.getElementById('shortcutModalClearBtn');
+  const cancelBtn = document.getElementById('shortcutModalCancelBtn');
+
+  slotSelect.value = habit.shortcutSlot || '';
+  actionSelect.value = habit.shortcutAction || 'checkIn';
+  errorEl.style.display = 'none';
+
+  chrome.storage.local.get({ sites: [] }, d => {
+    const usedSlots = getUsedSlots(d.sites);
+    renderSlotOccupiedHints(slotSelect, usedSlots, `habit:${habit.id}`);
+  });
+
+  updateCurrentShortcutInfo(habit.shortcutSlot);
+  slotSelect.onchange = () => updateCurrentShortcutInfo(slotSelect.value ? Number(slotSelect.value) : null);
+
+  const modal = document.getElementById('shortcutModal');
+  trapFocus(modal);
+  focusModalInput('shortcutModal');
+
+  saveBtn.onclick = () => {
+    const slot = slotSelect.value ? Number(slotSelect.value) : null;
+    const action = actionSelect.value || null;
+    chrome.storage.local.get(null, (data) => {
+      const sites = data.sites || [];
+      // 清除所有同槽位的旧绑定
+      if (slot) {
+        sites.forEach(s => {
+          if (s.quickTootSlot === slot) s.quickTootSlot = null;
+          (s.habits || []).forEach(h => { if (h.shortcutSlot === slot) { h.shortcutSlot = null; h.shortcutAction = null; } });
+        });
+      }
+      const si = sites.findIndex(s => s.id === data.activeSiteId);
+      if (si === -1) { hideModal(overlayId); return; }
+      const hi = sites[si].habits.findIndex(h => h.id === currentEditingHabitId);
+      if (hi !== -1) { sites[si].habits[hi].shortcutSlot = slot; sites[si].habits[hi].shortcutAction = action; }
+      chrome.storage.local.set({ sites }, () => { hideModal(overlayId); loadData(); });
+    });
+  };
+  clearBtn.onclick = () => {
+    chrome.storage.local.get(null, (data) => {
+      const sites = data.sites || [];
+      const si = sites.findIndex(s => s.id === data.activeSiteId);
+      if (si === -1) { hideModal(overlayId); return; }
+      const hi = sites[si].habits.findIndex(h => h.id === currentEditingHabitId);
+      if (hi !== -1) { sites[si].habits[hi].shortcutSlot = null; sites[si].habits[hi].shortcutAction = null; }
+      chrome.storage.local.set({ sites }, () => { hideModal(overlayId); loadData(); });
+    });
+  };
+  cancelBtn.onclick = () => hideModal(overlayId);
+}
+
+// 单条嘟嘟发嘟快捷键 modal
+function showShortcutModalForQuickToot(site, allSites) {
+  shortcutModalMode = 'quickToot';
   const overlayId = 'shortcutModalOverlay';
   showModal(overlayId);
 
-  currentEditingHabitId = habit.id;
-  const slotSelect = document.getElementById('slotSelect');
-  const actionSelect = document.getElementById('actionSelect');
-  const shortcutModalError = document.getElementById('shortcutModalError');
-  const shortcutModalSaveBtn = document.getElementById('shortcutModalSaveBtn');
-  const shortcutModalClearBtn = document.getElementById('shortcutModalClearBtn');
-  const shortcutModalCancelBtn = document.getElementById('shortcutModalCancelBtn');
+  document.getElementById('shortcutModalTitle').textContent = `${getSiteDisplayName(site)}发嘟快捷键`;
+  document.getElementById('shortcutModalInfo').textContent = `为 ${getSiteDisplayName(site)} 的「写单条嘟嘟」按钮绑定快捷键，按下后直接打开此实例的发嘟窗口。`;
+  document.getElementById('shortcutActionRow').style.display = 'none';
 
-  if (slotSelect) slotSelect.value = habit.shortcutSlot || '';
-  if (actionSelect) actionSelect.value = habit.shortcutAction || 'checkIn';
-  if (shortcutModalError) shortcutModalError.style.display = 'none';
+  const slotSelect = document.getElementById('slotSelect');
+  const errorEl = document.getElementById('shortcutModalError');
+  const saveBtn = document.getElementById('shortcutModalSaveBtn');
+  const clearBtn = document.getElementById('shortcutModalClearBtn');
+  const cancelBtn = document.getElementById('shortcutModalCancelBtn');
+
+  slotSelect.value = site.quickTootSlot || '';
+  errorEl.style.display = 'none';
+
+  const usedSlots = getUsedSlots(allSites);
+  renderSlotOccupiedHints(slotSelect, usedSlots, `quickToot:${site.id}`);
+  updateCurrentShortcutInfo(site.quickTootSlot);
+  slotSelect.onchange = () => updateCurrentShortcutInfo(slotSelect.value ? Number(slotSelect.value) : null);
 
   const modal = document.getElementById('shortcutModal');
-  modal.classList.add('open');
   trapFocus(modal);
-
-  updateCurrentShortcutInfo(habit.shortcutSlot);
-  if (slotSelect) {
-    slotSelect.addEventListener('change', () => {
-      const slot = slotSelect.value ? Number(slotSelect.value) : null;
-      updateCurrentShortcutInfo(slot);
-    });
-  }
-
   focusModalInput('shortcutModal');
 
-  shortcutModalSaveBtn.onclick = () => {
+  saveBtn.onclick = () => {
     const slot = slotSelect.value ? Number(slotSelect.value) : null;
-    const action = actionSelect.value || null;
-
-    chrome.storage.local.get({ habits: [] }, data => {
-      const h = data.habits || [];
-
+    chrome.storage.local.get(null, (data) => {
+      const sites = data.sites || [];
       if (slot) {
-        h.forEach(x => { if (x.shortcutSlot === slot) { x.shortcutSlot = null; x.shortcutAction = null; } });
+        sites.forEach(s => {
+          if (s.quickTootSlot === slot) s.quickTootSlot = null;
+          (s.habits || []).forEach(h => { if (h.shortcutSlot === slot) { h.shortcutSlot = null; h.shortcutAction = null; } });
+        });
       }
-
-      const i = h.findIndex(x => x.id === currentEditingHabitId);
-      if (i === -1) {
-        hideModal(overlayId);
-        return;
-      }
-
-      h[i].shortcutSlot = slot;
-      h[i].shortcutAction = action;
-
-      chrome.storage.local.set({ habits: h }, () => {
-        hideModal(overlayId);
-        loadData();
-      });
+      const si = sites.findIndex(s => s.id === site.id);
+      if (si !== -1) sites[si].quickTootSlot = slot;
+      chrome.storage.local.set({ sites }, () => { hideModal(overlayId); loadData(); });
     });
   };
-
-  shortcutModalClearBtn.onclick = () => {
-    chrome.storage.local.get({ habits: [] }, data => {
-      const h = data.habits || [];
-      const i = h.findIndex(x => x.id === currentEditingHabitId);
-      if (i === -1) {
-        hideModal(overlayId);
-        return;
-      }
-      h[i].shortcutSlot = null;
-      h[i].shortcutAction = null;
-      chrome.storage.local.set({ habits: h }, () => {
-        hideModal(overlayId);
-        loadData();
-      });
+  clearBtn.onclick = () => {
+    chrome.storage.local.get(null, (data) => {
+      const sites = data.sites || [];
+      const si = sites.findIndex(s => s.id === site.id);
+      if (si !== -1) sites[si].quickTootSlot = null;
+      chrome.storage.local.set({ sites }, () => { hideModal(overlayId); loadData(); });
     });
   };
-
-  shortcutModalCancelBtn.onclick = () => hideModal(overlayId);
+  cancelBtn.onclick = () => hideModal(overlayId);
 }
 
-
-// 自定义单个习惯快捷键的按钮
-// popup 里的普通链接不允许直接跳转到内部页面，所以用 扩展 API 创建新标签页。
-document
-  .getElementById('shortcutOpenChromeLink')
-  .addEventListener('click', (e) => {
-    e.preventDefault();
-    chrome.tabs.create({
-      url: 'chrome://extensions/shortcuts'
-    });
-  });
-// 自定义插件面板快捷键的按钮
-document
-  .getElementById('popupShortcutOpenChromeLink')
-  .addEventListener('click', (e) => {
-    e.preventDefault();
-    chrome.tabs.create({
-      url: 'chrome://extensions/shortcuts'
-    });
-  });
-
-
-// ============== Thread Modal ==============
-function showThreadModal(habit, text, data) {
-  const url = chrome.runtime.getURL(`thread-editor/thread-editor.html?habitId=${habit.id}&text=${encodeURIComponent(text)}`);
-  chrome.windows.create({
-    url: url,
-    type: 'popup',
-    width: 460,
-    height: 560,
-    focused: true
-  }, (createdWindow) => {
-    if (chrome.runtime.lastError) {
-      const lang = getCurrentLang() || 'zh-cn';
-      const L = LOCALES[lang] || LOCALES['zh-cn'];
-      alert(L.errorPublish || 'Failed to show editor window, please try again.');
-      console.error('Failed to create window:', chrome.runtime.lastError);
-      return;
-    }
-    if (createdWindow) {
-      window.close();
-    } else {
-      const lang = getCurrentLang() || 'zh-cn';
-      const L = LOCALES[lang] || LOCALES['zh-cn'];
-      alert(L.errorPublish || 'Failed to show editor window, please try again.');
-    }
-  });
-}
-
-// ============== Edit Title ==============
-function startEditTitle(habit, labelEl, idx) {
+// ===== Edit Title =====
+function startEditTitle(habit, labelEl) {
   const input = document.createElement('input');
-  input.type = 'text';
-  input.className = 'edit-input';
-  input.value = habit.title || '';
-  input.style.width = '100%';
-
+  input.type = 'text'; input.className = 'edit-input';
+  input.value = habit.title || ''; input.style.width = '100%';
   labelEl.replaceWith(input);
-  input.focus();
-  input.select();
+  input.focus(); input.select();
 
   function save() {
     const newTitle = input.value.trim();
-    if (!newTitle) {
-      input.replaceWith(labelEl);
-      return;
-    }
-    chrome.storage.local.get({ habits: [] }, data => {
-      const h = data.habits || [];
-      const i = h.findIndex(x => x.id === habit.id);
-      if (i === -1) {
-        input.replaceWith(labelEl);
-        return;
-      }
-      h[i].title = newTitle;
-      chrome.storage.local.set({ habits: h }, () => { loadData(); });
-    });
+    if (!newTitle) { input.replaceWith(labelEl); return; }
+    updateHabitField(habit.id, 'title', newTitle, loadData);
   }
-
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      save();
-    } else if (e.key === 'Escape') {
-      input.replaceWith(labelEl);
-    }
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); save(); }
+    else if (e.key === 'Escape') input.replaceWith(labelEl);
   });
-  input.addEventListener('blur', () => save());
+  input.addEventListener('blur', save);
 }
 
-// ============== Habit Operations ==============
-function onMoveHabit(id, dir, btnClass) {
-  moveHabitById(id, dir, () => {
-    loadData(false, id, btnClass);
+// ===== 通用话题字段更新 =====
+function updateHabitField(habitId, field, value, callback) {
+  chrome.storage.local.get(null, (data) => {
+    const sites = data.sites || [];
+    const si = sites.findIndex(s => s.id === data.activeSiteId);
+    if (si === -1) return;
+    const hi = sites[si].habits.findIndex(h => h.id === habitId);
+    if (hi !== -1) sites[si].habits[hi][field] = value;
+    chrome.storage.local.set({ sites }, callback);
   });
 }
 
-function onDeleteHabit(id, title) {
-  const lang = getCurrentLang() || 'zh-cn';
-  const msg = (LOCALES[lang] && LOCALES[lang].confirmDelete) || LOCALES['zh-cn'].confirmDelete;
-  if (!confirm(`${msg}\n\n${title}`)) return;
+// ===== 话题操作 =====
+function onMoveHabit(habitId, dir, btnClass) {
+  chrome.storage.local.get({ activeSiteId: null }, d => {
+    moveHabitById(d.activeSiteId, habitId, dir, () => loadData(false, habitId, btnClass));
+  });
+}
 
-  deleteHabitById(id, loadData);
+function onDeleteHabit(habitId, title) {
+  if (!confirm(`确定删除这个话题吗？删除后所有历史记录都会消失。此操作无法撤销。\n\n${title}`)) return;
+  chrome.storage.local.get({ activeSiteId: null }, d => deleteHabitById(d.activeSiteId, habitId, loadData));
 }
 
 function onHabitDone(habit, focusedHabitId = null) {
-  chrome.storage.local.get(
-    {
-      habits: [],
-      emojiDone: '🔥',
-      emojiEmpty: '⬜',
-      instance: '',
-      language: 'zh-cn',
-      templates: {},
-      enableThreading: false
-    },
-    data => {
-      const hlist = data.habits || [];
-      const idx = hlist.findIndex(h => h.id === habit.id);
-      if (idx === -1) return;
+  chrome.storage.local.get(null, (data) => {
+    const sites = data.sites || [];
+    const si = sites.findIndex(s => s.id === data.activeSiteId);
+    if (si === -1) return;
+    const site = sites[si];
+    if (!validateAndNormalizeInstance(site.instance)) { showInstanceModal(); return; }
 
-      const h = hlist[idx];
+    const hi = sites[si].habits.findIndex(h => h.id === habit.id);
+    if (hi === -1) return;
+    const h = sites[si].habits[hi];
 
-      if (!validateAndNormalizeInstance(data.instance)) {
-        showInstanceModal(data.language || getCurrentLang() || 'zh-cn', data.instance);
-        return;
-      }
+    const today = new Date().toISOString().slice(0, 10);
+    h.records = h.records || {};
+    h.records[today] = true;
+    h.totalDone = Object.values(h.records).filter(v => v === true).length;
+    const streak = calcStreak(h.records);
+    if (streak > (h.bestStreak || 0)) h.bestStreak = streak;
 
-      const today = new Date().toISOString().slice(0, 10);
-      h.records = h.records || {};
-      h.records[today] = true;
-
-      const totalDone = Object.values(h.records).filter(v => v === true).length;
-      h.totalDone = totalDone;
-
-      const streak = calcStreak(h.records);
-      if (streak > h.bestStreak) {
-        h.bestStreak = streak;
-      }
-
-      chrome.storage.local.set({ habits: hlist }, () => {
-        const heatmap = buildHeatmap(h.records, data.emojiDone, data.emojiEmpty);
-
-        const templateToUse = h.customTemplate && h.customTemplate.trim()
-          ? h.customTemplate
-          : null;
-
-        const text = buildHabitPostText({
-          habit: h,
-          streak,
-          best: h.bestStreak,
-          total: h.totalDone,
-          heatmap,
-          emojiDone: data.emojiDone || '🔥',
-          emojiEmpty: data.emojiEmpty || '⬜',
-          lang: data.language || 'zh-cn',
-          userTemplates: data.templates || {},
-          customTemplate: templateToUse,
-        });
-
-        if (data.enableThreading) {
-          showThreadModal(h, text, data);
-        } else {
-          const inst = validateAndNormalizeInstance(data.instance) || 'https://example.social';
-          const url = inst + '/share?text=' + encodeURIComponent(text);
-          window.open(url);
-          loadData(false, focusedHabitId);
-        }
+    chrome.storage.local.set({ sites }, () => {
+      const heatmap = buildHeatmap(h.records, site.emojiDone || '🔥', site.emojiEmpty || '⬜');
+      const text = buildHabitPostText({
+        habit: h, streak, best: h.bestStreak, total: h.totalDone, heatmap,
+        siteTemplate: site.template !== undefined ? site.template : null,
+        customTemplate: h.customTemplate && h.customTemplate.trim() ? h.customTemplate : null
       });
-    }
-  );
+
+      if (site.enableThreading) {
+        chrome.runtime.sendMessage({ action: 'showThreadModalFromPopup', siteId: site.id, habitId: h.id, text });
+        window.close();
+      } else {
+        const inst = validateAndNormalizeInstance(site.instance) || 'https://example.social';
+        window.open(inst + '/share?text=' + encodeURIComponent(text));
+        loadData(false, focusedHabitId);
+      }
+    });
+  });
 }
 
 function onHabitUnDone(habit, focusedHabitId = null) {
-  chrome.storage.local.get({ habits: [] }, data => {
-    const hlist = data.habits || [];
-    const idx = hlist.findIndex(h => h.id === habit.id);
-    if (idx === -1) return;
-
-    const h = hlist[idx];
+  chrome.storage.local.get(null, (data) => {
+    const sites = data.sites || [];
+    const si = sites.findIndex(s => s.id === data.activeSiteId);
+    if (si === -1) return;
+    const hi = sites[si].habits.findIndex(h => h.id === habit.id);
+    if (hi === -1) return;
     const today = new Date().toISOString().slice(0, 10);
-    h.records = h.records || {};
-    delete h.records[today];
-
-    chrome.storage.local.set({ habits: hlist }, () => {
-      loadData(false, focusedHabitId);
-    });
+    sites[si].habits[hi].records = sites[si].habits[hi].records || {};
+    delete sites[si].habits[hi].records[today];
+    chrome.storage.local.set({ sites }, () => loadData(false, focusedHabitId));
   });
 }

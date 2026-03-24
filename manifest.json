@@ -3,7 +3,7 @@
   "name": "QuickToot",
   "description": "Toot from any tab with a single shortcut.",
 
-  "version": "1.0",
+  "version": "1.1",
   "icons": {
     "16": "icons/quicktoot-icon-16.png",
     "32": "icons/quicktoot-icon-32.png",
@@ -47,21 +47,21 @@
         "default": "Ctrl+Shift+1",
         "mac": "Command+Shift+1" 
       },
-      "description": "Activate topic shortcut 1 (compose or linked page)"
+      "description": "槽位 1"
     },
     "shortcut2": {
       "suggested_key": {
         "default": "Ctrl+Shift+2",
         "mac": "Command+Shift+2" 
       },
-      "description": "Activate topic shortcut 2 (compose or linked page)"
+      "description": "槽位 2"
     },
     "shortcut3": {
       "suggested_key": {
         "default": "Ctrl+Shift+3",
         "mac": "Command+Shift+3" 
       },
-      "description": "Activate topic shortcut 3 (compose or linked page)"
+      "description": "槽位 3"
     },
     "open-panel": { 
       "suggested_key": { 
